@@ -1,0 +1,29 @@
+name: pedestrian-crossing-sweep
+runner: crossing
+sweep:
+  vehicle_speed_mps:
+    values: [8, 10, 12, 14, 16]
+  pedestrian_delay_s:
+    range: {from: 0.5, to: 3.0, step: 0.1}
+  reaction_time_s:
+    values: [0.3, 0.5, 0.8]
+  max_decel_mps2:
+    values: [4.0, 6.0, 8.0]
+  sensor_noise_std:
+    values: [0.0, 0.1, 0.3]
+scoring:
+  components:
+    - metric: min_distance_m
+      good: 3.0
+      bad: 0.5
+    - metric: max_decel_mps2
+      good: 2.0
+      bad: 8.0
+  combine: min
+zones:
+  - name: green
+    min: 80
+  - name: yellow
+    min: 50
+  - name: red
+    min: 0

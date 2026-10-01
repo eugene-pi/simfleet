@@ -11,11 +11,11 @@
       "envFile": "${workspaceFolder}/.env"
     },
     {
-      "name": "api",
+      "name": "runlocal",
       "type": "go",
       "request": "launch",
       "mode": "debug",
-      "program": "${workspaceFolder}/cmd/api",
+      "program": "${workspaceFolder}/cmd/runlocal",
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env"
     }

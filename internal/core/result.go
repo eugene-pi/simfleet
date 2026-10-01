@@ -8,9 +8,11 @@ type Result struct {
 	DurationMS int
 }
 
+/*
 type Evaluation struct {
 	Score       float64 // 0..100
 	Zone        string
 	ScoringHash string
 	Components  map[string]float64
 }
+*/

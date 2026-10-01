@@ -7,7 +7,9 @@ include .env
 export
 endif
 
-.PHONY: build test lint migrate db-up db-down run-api tidy
+SPEC ?= examples/crossing-small.yaml
+
+.PHONY: build test lint migrate db-up db-down run-api run-local tidy
 
 build:
 	go build -o bin/ ./cmd/...
@@ -33,3 +35,6 @@ migrate:
 
 run-api:
 	go run ./cmd/api
+
+run-local:
+	go run ./cmd/runlocal $(SPEC)

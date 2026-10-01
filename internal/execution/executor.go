@@ -5,9 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime/pprof"
-	"time"
-	"uuid"
 
 	"github.com/eugene-pi/simfleet/internal/core"
 	"github.com/eugene-pi/simfleet/internal/store"
@@ -16,27 +13,28 @@ import (
 type Executor struct {
 	store    Store
 	blob     Blob
-	runners  map[string]Runner
+	runners  Registry
 	workerID string
-
-	leaseTTL   time.Duration // 60s
-	renewEvery time.Duration // 20s — треть от TTL
 }
 
-func (e *Executor) Execute(ctx context.Context, jobID uuid.UUID) error {
+func NewExecutor(st Store, b Blob, reg Registry, workerID string) *Executor {
+	return &Executor{store: st, blob: b, runners: reg, workerID: workerID}
+}
+
+func (e *Executor) Execute(ctx context.Context, jobID core.JobID) error {
 	attempt, err := e.store.Claim(ctx, jobID, e.workerID)
 	if errors.Is(err, store.ErrNotClaimable) {
 		return nil // кто-то успел раньше — это норма
 	}
 	if err != nil {
-		return err // сбой базы: сообщение не подтверждаем
+		return fmt.Errorf("claim %s: %w", jobID, err)
 	}
 
 	task, err := e.store.LoadTask(ctx, jobID)
 	if err != nil {
-		return err
+		return fmt.Errorf("load task %s: %w", jobID, err)
 	}
-	runner, ok := e.runners[task.Runner]
+	runner, ok := e.runners.Get(task.Runner)
 	if !ok {
 		return e.store.MarkFailed(ctx, jobID, attempt, "unknown runner: "+task.Runner)
 	}
@@ -45,30 +43,21 @@ func (e *Executor) Execute(ctx context.Context, jobID uuid.UUID) error {
 	// прогон отменяется.
 	runCtx, cancel := context.WithTimeout(ctx, runner.Profile().Timeout)
 	defer cancel()
-	go e.keepLease(runCtx, cancel, jobID, attempt)
 
-	// Метка горутины: в Go 1.27 она попадает в аварийную трассировку,
-	// поэтому при панике сразу видно, какое задание её вызвало.
-	var res Result
-	var runErr error
-	pprof.Do(runCtx, pprof.Labels("job_id", jobID.String(), "runner", runner.Name()),
-		func(c context.Context) {
-			res, runErr = runSafely(c, runner, task)
-		})
-
-	if runErr != nil {
-		return e.handleFailure(ctx, jobID, attempt, runErr)
+	res, err := runner.Run(runCtx, task)
+	if err != nil {
+		return e.store.ReleaseForRetry(ctx, jobID, attempt, err.Error())
 	}
 	return e.saveSuccess(ctx, task, attempt, res)
 }
 
 func (e *Executor) saveSuccess(ctx context.Context, t core.Task, attempt int, res core.Result) error {
-	key := fmt.Sprintf("exp/%s/job/%s/attempt/%d/trace.parquet",
-		t.ExperimentID, t.JobID, attempt)
-
+	var key string
 	if len(res.Artifact) > 0 {
+		key = fmt.Sprintf("exp/%s/job/%s/attempt/%d/trace.json",
+			t.ExperimentID, t.JobID, attempt)
 		if err := e.blob.Put(ctx, key, bytes.NewReader(res.Artifact)); err != nil {
-			return err
+			return fmt.Errorf("put artifact: %w", err)
 		}
 	} else {
 		key = ""

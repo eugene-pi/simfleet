@@ -7,11 +7,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Store struct {
+type Postgres struct {
 	pool *pgxpool.Pool
 }
 
-func New(ctx context.Context, dsn string) (*Store, error) {
+func NewPostgresStore(ctx context.Context, dsn string) (*Postgres, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse dsn: %w", err)
@@ -27,9 +27,9 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping: %w", err)
 	}
-	return &Store{pool: pool}, nil
+	return &Postgres{pool: pool}, nil
 }
 
-func (s *Store) Close() {
+func (s *Postgres) Close() {
 	s.pool.Close()
 }

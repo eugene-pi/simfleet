@@ -1,7 +1,13 @@
 package store
 
+import (
+	"context"
+	"testing"
+	"github.com/stretchr/testify/require"
+)
+
 func TestFencing(t *testing.T) {
-	pool := newStore(t)
+	pool := NewPostgresStore(context.Background(), "")
 	jobID := seedQueuedJob(t, pool)
 
 	// исполнитель A берёт задание
@@ -26,7 +32,7 @@ func TestFencing(t *testing.T) {
 	require.NoError(t, pool.SaveResult(ctx, Result{JobID: jobID, Attempt: attemptB, ...}))
 }
 
-func TestConcurrentClaim(t *testing.T) {
+//func TestConcurrentClaim(t *testing.T) {
 	// 20 горутин пытаются взять одно задание;
 	// ровно одна получает номер попытки, остальные — ErrNotClaimable
-}
+//}

@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/eugene-pi/simfleet/internal/envfile"
-	"github.com/eugene-pi/simfleet/internal/store"
+	store "github.com/eugene-pi/simfleet/internal/migrate"
 )
 
 func main() {

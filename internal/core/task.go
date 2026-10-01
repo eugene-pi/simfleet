@@ -8,7 +8,7 @@ type Task struct {
 	Runner       string // "crossing" | "stt"
 	Idx          int    // номер сочетания в переборе
 	Seed         int64  // выводится из ExperimentID и Idx
-	Params       map[string]any
+	Params       map[string]ParamValue
 	InputRef     string // ключ набора данных в S3; пусто для симуляции
 	WorkDir      string // временный каталог, чистит платформа
 }

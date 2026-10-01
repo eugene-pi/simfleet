@@ -16,7 +16,7 @@ type ExpiredJob struct {
 	Attempt      int
 }
 
-func (s *Store) ReclaimExpired(ctx context.Context, limit int) ([]ExpiredJob, error) {
+func (s *Postgres) ReclaimExpired(ctx context.Context, limit int) ([]ExpiredJob, error) {
 	const q = `
 		UPDATE jobs
 		   SET state = 'queued', lease_until = NULL,
