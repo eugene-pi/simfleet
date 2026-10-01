@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eugene-pi/simfleet/internal/store"
+	"github.com/eugene-pi/simfleet/internal/migrate"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -32,7 +32,7 @@ func NewPostgres(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("dsn: %v", err)
 	}
-	if err := store.Migrate(ctx, dsn, false, false); err != nil {
+	if err := migrate.Migrate(ctx, dsn, false, false); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return dsn
