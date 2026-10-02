@@ -27,10 +27,10 @@ func (c *Crossing) Profile() core.Profile {
 
 func (c *Crossing) ParamSchema() map[string]core.ParamKind {
 	return map[string]core.ParamKind{
-		"vehicle_speed_mps":  core.KindNum,
-		"pedestrian_delay_s": core.KindNum,
-		"reaction_time_s":    core.KindNum,
-		"max_decel_mps2":     core.KindNum,
-		"sensor_noise_std":   core.KindNum,
+		"vehicle_speed_mps":       core.KindNum, // initial vehicle's speed
+		"pedestrian_appears_at_m": core.KindNum, // initital distance between the vehicle and the ped
+		"reaction_time_s":         core.KindNum, // delay between object recognition and braking
+		"max_decel_mps2":          core.KindNum, // how fast can we deccelerate (friction, road condition, tires - combined)
+		"sensor_noise_std":        core.KindNum, // this introduces inaccuracy into distance measuring
 	}
 }

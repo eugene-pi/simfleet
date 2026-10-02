@@ -11,24 +11,22 @@ import (
 )
 
 const (
-	dt           = 0.02  // шаг интегрирования, с
-	horizon      = 10.0  // максимальная длительность сценария, с
-	startX       = -60.0 // начальное положение машины, м (пешеход в нуле)
+	dt           = 0.02 // шаг интегрирования, с
+	horizon      = 10.0 // максимальная длительность сценария, с
 	sensorRangeM = 50.0
 )
 
 type params struct {
-	speed    float64
-	pedDelay float64
-	reaction float64
-	maxDecel float64
-	noiseStd float64
+	speed           float64
+	pedInitDistance float64
+	reaction        float64
+	maxDecel        float64
+	noiseStd        float64
 }
 
 func (c *Crossing) Run(ctx context.Context, t core.Task) (core.Result, error) {
 	collided := false
 	start := time.Now()
-
 	p, err := parseParams(t.Params)
 	if err != nil {
 		return core.Result{}, fmt.Errorf("params: %w", err)
@@ -36,72 +34,69 @@ func (c *Crossing) Run(ctx context.Context, t core.Task) (core.Result, error) {
 
 	rng := rand.New(rand.NewPCG(uint64(t.Seed), 0))
 
+	bias := 0.0
+	if p.noiseStd > 0 {
+		bias = rng.NormFloat64() * p.noiseStd
+	}
+
+	effectiveRange := sensorRangeM + bias
+
 	var (
-		x          = startX
+		x          = -p.pedInitDistance
 		v          = p.speed
+		step       = 0
+		maxSteps   = int(horizon / dt)
 		minDist    = math.Inf(1)
-		minTTC     = math.Inf(1)
-		maxDecel   = 0.0
 		braking    = false
 		detectedAt = -1.0
 	)
 
-	for tm := 0.0; tm < horizon; tm += dt {
+	for ; step < maxSteps && x < 1.0 && v >= 0.01; step++ {
+		tm := float64(step) * dt
 		if err := ctx.Err(); err != nil {
 			return core.Result{}, err
 		}
 
-		pedOnRoad := tm >= p.pedDelay
-
-		if pedOnRoad && detectedAt < 0 && math.Abs(x) <= sensorRangeM {
+		if detectedAt < 0 && math.Abs(x) <= effectiveRange {
 			detectedAt = tm
-		}
-		if detectedAt >= 0 && tm >= detectedAt+p.reaction {
+		} else if detectedAt >= 0 && tm >= detectedAt+p.reaction {
 			braking = true
 		}
 
 		if braking {
-			maxDecel = p.maxDecel
 			v = math.Max(0, v-p.maxDecel*dt)
+			if v < 0.01 {
+				v = 0
+			}
 		}
-		prevX := x
 		x += v * dt
 
-		if prevX < 0 && x >= 0 { // пересекли точку перехода
-			if pedOnRoad && v > 0.01 {
-				collided = true
-				minDist = 0
-			}
-			break // сценарий закончен в любом случае
-		}
-		if pedOnRoad {
-			dist := math.Min(math.Abs(prevX), math.Abs(x))
-			if p.noiseStd > 0 {
-				dist += rng.NormFloat64() * p.noiseStd
-			}
-			minDist = math.Min(minDist, dist)
-			if x < 0 && v > 0.01 {
-				minTTC = math.Min(minTTC, -x/v)
-			}
-		}
-
-		if x > 5 { // перекрёсток пройден
-			break
-		}
 	}
-
+	if x >= 0 {
+		collided = true
+		minDist = 0
+	} else {
+		minDist = math.Abs(x)
+	}
 	metrics := map[string]float64{
 		"min_distance_m":  minDist,
-		"max_decel_mps2":  maxDecel,
 		"final_speed_mps": v,
 	}
-	if !math.IsInf(minTTC, 1) {
-		metrics["time_to_collision_s"] = minTTC
+	if p.noiseStd > 0 {
+		metrics["sensor_bias_m"] = bias
 	}
 
+	if collided {
+		metrics["collision_time_s"] = float64(step) * dt
+	}
+
+	flags := map[string]bool{
+		"collision": collided,
+		"timeout":   step >= maxSteps,
+	}
 	return core.Result{
 		Metrics:    metrics,
-		Flags:      map[string]bool{"collision": collided},
+		Flags:      flags,
 		Labels:     map[string]string{},
 		DurationMS: int(time.Since(start).Milliseconds()),
 	}, nil
@@ -125,7 +120,7 @@ func parseParams(m map[string]core.ParamValue) (params, error) {
 	if p.speed, err = get("vehicle_speed_mps"); err != nil {
 		return p, err
 	}
-	if p.pedDelay, err = get("pedestrian_delay_s"); err != nil {
+	if p.pedInitDistance, err = get("pedestrian_appears_at_m"); err != nil {
 		return p, err
 	}
 	if p.reaction, err = get("reaction_time_s"); err != nil {

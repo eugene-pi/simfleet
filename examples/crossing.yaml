@@ -3,8 +3,8 @@ runner: crossing
 sweep:
   vehicle_speed_mps:
     values: [8, 10, 12, 14, 16]
-  pedestrian_delay_s:
-    range: {from: 0.5, to: 3.0, step: 0.1}
+  pedestrian_appears_at_m:
+    range: {from: 10, to: 60, step: 2}
   reaction_time_s:
     values: [0.3, 0.5, 0.8]
   max_decel_mps2:

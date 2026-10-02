@@ -1,7 +1,7 @@
 name: crossing-invalid
 runner: crossing
 sweep:
-  vehicle_speed_mps:
+    pedestrian_appears_at_m:
     values: ["10, 14, fast"]
   pedestrian_delay_s:
     values: [1.0, 2.0, 3.0]
