@@ -15,6 +15,7 @@ type Store interface {
 	SaveResult(ctx context.Context, r store.ResultRecord) error
 	ReleaseForRetry(ctx context.Context, jobID core.JobID, attempt int, cause string) error
 	MarkFailed(ctx context.Context, jobID core.JobID, attempt int, cause string) error
+	RenewLease(ctx context.Context, jobID core.JobID, attempt int) error
 }
 
 type Blob interface {

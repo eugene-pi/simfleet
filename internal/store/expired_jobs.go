@@ -39,3 +39,13 @@ func (s *Postgres) ReclaimExpired(ctx context.Context, limit int) ([]ExpiredJob,
 	defer rows.Close()
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[ExpiredJob])
 }
+
+func (p *Postgres) FailExhausted(ctx context.Context, limit int) (int, error) {
+	const q = `
+		UPDATE jobs
+		   SET state = 'failed', lease_until = NULL, worker_id = NULL,
+		       last_error = 'attempts exhausted', updated_at = now()
+		 WHERE state = 'running' AND lease_until < now() AND attempt >= $1`
+	tag, err := p.pool.Exec(ctx, q, job.MaxAttempts)
+	return int(tag.RowsAffected()), err
+}

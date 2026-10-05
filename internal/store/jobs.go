@@ -16,6 +16,7 @@ const leaseDuration = 60 * time.Second
 
 var ErrNotClaimable = errors.New("job is not claimable")
 var ErrJobNotFound = errors.New("job is not found")
+var ErrLeaseLost = errors.New("job lease has expired")
 
 // Claim переводит задание в running и увеличивает номер попытки.
 // Возвращает номер попытки — маркер ограждения для последующей записи результата.
@@ -134,7 +135,31 @@ func (p *Postgres) finishWith(ctx context.Context, jobID core.JobID,
 	return nil
 }
 
-func (p *Postgres) NextQueued(ctx context.Context, expID core.ExperimentID, limit int) ([]core.JobID, error) {
+func (p *Postgres) NextQueued(ctx context.Context, limit int) ([]core.JobID, error) {
+	const q = `
+		SELECT id FROM jobs
+		 WHERE state = 'queued'
+		 ORDER BY idx
+		 LIMIT $1`
+
+	rows, err := p.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("next queued: %w", err)
+	}
+	defer rows.Close()
+
+	var out []core.JobID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, core.JobID(id))
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) NextQueuedForExperiment(ctx context.Context, expID core.ExperimentID, limit int) ([]core.JobID, error) {
 	const q = `
 		SELECT id FROM jobs
 		 WHERE experiment_id = $1 AND state = 'queued'
@@ -156,6 +181,23 @@ func (p *Postgres) NextQueued(ctx context.Context, expID core.ExperimentID, limi
 		out = append(out, core.JobID(id))
 	}
 	return out, rows.Err()
+}
+
+// internal/store/jobs.go
+func (p *Postgres) RenewLease(ctx context.Context, jobID core.JobID, attempt int) error {
+	const q = `
+		UPDATE jobs
+		   SET lease_until = now() + $3::interval, updated_at = now()
+		 WHERE id = $1 AND attempt = $2 AND state = 'running'`
+
+	tag, err := p.pool.Exec(ctx, q, uuid.UUID(jobID), attempt, leaseDuration.String())
+	if err != nil {
+		return fmt.Errorf("renew lease %s: %w", jobID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseLost
+	}
+	return nil
 }
 
 type Summary struct {

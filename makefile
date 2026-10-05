@@ -37,4 +37,4 @@ run-api:
 	go run ./cmd/api
 
 run-local:
-	go run ./cmd/runlocal $(SPEC)
+	go run ./cmd/runlocal submit $(SPEC)
