@@ -12,15 +12,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const leaseDuration = 60 * time.Second
-
 var ErrNotClaimable = errors.New("job is not claimable")
 var ErrJobNotFound = errors.New("job is not found")
 var ErrLeaseLost = errors.New("job lease has expired")
 
 // Claim переводит задание в running и увеличивает номер попытки.
 // Возвращает номер попытки — маркер ограждения для последующей записи результата.
-func (s *Postgres) Claim(ctx context.Context, jobID core.JobID, workerID string) (int, error) {
+func (s *Postgres) Claim(ctx context.Context, jobID core.JobID, workerID string, ld time.Duration) (int, error) {
 	const q = `
 		UPDATE jobs
 		   SET state       = 'running',
@@ -32,7 +30,7 @@ func (s *Postgres) Claim(ctx context.Context, jobID core.JobID, workerID string)
 		RETURNING attempt`
 
 	var attempt int
-	err := s.pool.QueryRow(ctx, q, jobID, workerID, leaseDuration.String()).Scan(&attempt)
+	err := s.pool.QueryRow(ctx, q, jobID, workerID, ld.String()).Scan(&attempt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNotClaimable
 	}
@@ -184,13 +182,13 @@ func (p *Postgres) NextQueuedForExperiment(ctx context.Context, expID core.Exper
 }
 
 // internal/store/jobs.go
-func (p *Postgres) RenewLease(ctx context.Context, jobID core.JobID, attempt int) error {
+func (p *Postgres) RenewLease(ctx context.Context, jobID core.JobID, attempt int, ld time.Duration) error {
 	const q = `
 		UPDATE jobs
 		   SET lease_until = now() + $3::interval, updated_at = now()
 		 WHERE id = $1 AND attempt = $2 AND state = 'running'`
 
-	tag, err := p.pool.Exec(ctx, q, uuid.UUID(jobID), attempt, leaseDuration.String())
+	tag, err := p.pool.Exec(ctx, q, uuid.UUID(jobID), attempt, ld.String())
 	if err != nil {
 		return fmt.Errorf("renew lease %s: %w", jobID, err)
 	}

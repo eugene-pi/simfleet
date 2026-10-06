@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 
 	"sigs.k8s.io/yaml"
@@ -22,15 +23,18 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("usage: runlocal <cmd> <spec.yaml>")
+		slog.Error("usage: runlocal <cmd> <spec.yaml>")
+		os.Exit(1)
 	}
 	envfile.LoadEnv()
+	core.SetupLogger()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		log.Fatal("DATABASE_URL is not set")
+		slog.Error("DATABASE_URL is not set")
+		os.Exit(1)
 	}
 	if err := run(dsn); err != nil {
-		log.Fatal(err)
+		slog.Any("error", err)
 	}
 }
 
@@ -57,7 +61,7 @@ func run(dsn string) error {
 	case "work":
 		return work(ctx, st, registry)
 	case "spawn":
-		return spawn(ctx, 2)
+		return spawn(ctx, 5)
 	default:
 		if len(os.Args) > 2 {
 			return fmt.Errorf("unknown command %v", os.Args[1])
@@ -76,18 +80,22 @@ func submit(ctx context.Context, st *store.Postgres, reg runner.Registry, path s
 		return core.ExperimentID{}, err
 	}
 	fmt.Println(expID)
-	log.Printf("создано заданий: %d", n)
+	slog.Info("jobs created", "job_count", n)
 	return expID, nil
 }
 
 func work(ctx context.Context, st *store.Postgres, reg runner.Registry) error {
 	workerID := config.WorkerID()
+	slog.SetDefault(slog.With("worker_id", workerID))
 	wc := config.LoadConfig()
 	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), reg, workerID, wc)
 
-	log.Printf("исполнитель %s начал работу", workerID)
+	slog.Info("executor started")
 	failed, done, skipped := 0, 0, 0
 	for {
+		if n, err := st.ReclaimExpired(ctx, 50); err == nil && len(n) > 0 {
+			slog.Info("detached jobs became claimable again", "jobs_count", len(n))
+		}
 		ids, err := st.NextQueued(ctx, 20)
 		if err != nil {
 			return err
@@ -98,7 +106,7 @@ func work(ctx context.Context, st *store.Postgres, reg runner.Registry) error {
 		for _, jobID := range ids {
 			claimed, err := exec.Execute(ctx, jobID)
 			if err != nil {
-				log.Printf("Job %s: %v", jobID, err)
+				slog.Error("unable to execute", "job", jobID, "error", err)
 				failed++
 			} else if claimed {
 				done++
@@ -107,7 +115,7 @@ func work(ctx context.Context, st *store.Postgres, reg runner.Registry) error {
 			}
 		}
 	}
-	log.Printf("Executor %s has finished: done %d, failed %d, skipped %d", workerID, done, failed, skipped)
+	slog.Info("Executor has finished: ", "done", done, "failed", failed, "skipped", skipped)
 	return nil
 }
 
@@ -121,6 +129,9 @@ func runSingle(ctx context.Context, st *store.Postgres, registry runner.Registry
 	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), registry, config.WorkerID(), wc)
 
 	for {
+		if n, err := st.ReclaimExpired(ctx, 50); err == nil && len(n) > 0 {
+			slog.Info("detached jobs became claimable again", "jobs_count", len(n))
+		}
 		ids, err := st.NextQueuedForExperiment(ctx, expID, 100)
 		if err != nil {
 			return err

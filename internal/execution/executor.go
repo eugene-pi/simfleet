@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand/v2"
 	"os"
 	"time"
@@ -29,7 +29,7 @@ func NewExecutor(st Store, b Blob, reg Registry, workerID string, wc config.Work
 }
 
 func (e *Executor) Execute(ctx context.Context, jobID core.JobID) (bool, error) {
-	attempt, err := e.store.Claim(ctx, jobID, e.workerID)
+	attempt, err := e.store.Claim(ctx, jobID, e.workerID, e.wc.LeaseDuration)
 	if errors.Is(err, store.ErrNotClaimable) {
 		return false, nil
 	}
@@ -102,8 +102,8 @@ func (e *Executor) keepLease(ctx context.Context, cancel context.CancelFunc,
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := e.store.RenewLease(ctx, jobID, attempt); err != nil {
-				log.Printf("аренда задания %s потеряна: %v", jobID, err)
+			if err := e.store.RenewLease(ctx, jobID, attempt, e.wc.RenewEvery); err != nil {
+				slog.Warn("job lease has been lost", "job", jobID, "error", err)
 				cancel()
 				return
 			}

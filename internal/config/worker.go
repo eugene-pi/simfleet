@@ -15,7 +15,7 @@ type WorkerConfig struct {
 func LoadConfig() WorkerConfig {
 	ld := os.Getenv("SIMFLEET_LEASE_DURATION")
 	btch := os.Getenv("SIMFLEET_BATCH_SIZE")
-	lds := time.Second * 30
+	lds := time.Second * 10
 	batch := 20
 	if ld != "" {
 		if ld2, err := strconv.Atoi(ld); err == nil && ld2 > 0 {
