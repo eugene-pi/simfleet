@@ -6,7 +6,7 @@ import (
 )
 
 func WorkerID() string {
-	if id := os.Getenv("WORKER_ID"); id != "" {
+	if id := os.Getenv(ENV_WORKER_ID); id != "" {
 		return id
 	}
 	host, err := os.Hostname()

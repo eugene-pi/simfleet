@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/envfile"
 	store "github.com/eugene-pi/simfleet/internal/migrate"
 )
@@ -16,10 +17,10 @@ func main() {
 	flag.BoolVar(&down, "down", false, "Upgrade 1 step down")
 	flag.BoolVar(&top, "top", true, "Upgrade to latest available version")
 	flag.Parse()
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := os.Getenv(config.ENV_DATABASE_URL)
 	if dsn == "" {
 		envfile.LoadEnv()
-		dsn = os.Getenv("DATABASE_URL")
+		dsn = os.Getenv(config.ENV_DATABASE_URL)
 		if dsn == "" {
 			log.Fatal("DATABASE_URL is not set")
 		}

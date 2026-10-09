@@ -87,7 +87,7 @@ func submit(ctx context.Context, st *store.Postgres, reg runner.Registry, path s
 func work(ctx context.Context, st *store.Postgres, reg runner.Registry) error {
 	workerID := config.WorkerID()
 	slog.SetDefault(slog.With("worker_id", workerID))
-	wc := config.LoadConfig()
+	wc := config.LoadWorkerConfig()
 	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), reg, workerID, wc)
 
 	slog.Info("executor started")
@@ -124,7 +124,7 @@ func runSingle(ctx context.Context, st *store.Postgres, registry runner.Registry
 	if err != nil {
 		return err
 	}
-	wc := config.LoadConfig()
+	wc := config.LoadWorkerConfig()
 
 	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), registry, config.WorkerID(), wc)
 

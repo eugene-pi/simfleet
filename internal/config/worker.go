@@ -12,14 +12,14 @@ type WorkerConfig struct {
 	BatchSize     int
 }
 
-func LoadConfig() WorkerConfig {
-	ld := os.Getenv("SIMFLEET_LEASE_DURATION")
-	btch := os.Getenv("SIMFLEET_BATCH_SIZE")
-	lds := time.Second * 10
-	batch := 20
+func LoadWorkerConfig() WorkerConfig {
+	ld := os.Getenv(ENV_SIMFLEET_LEASE_DURATION)
+	btch := os.Getenv(ENV_SIMFLEET_BATCH_SIZE)
+	lds := lease_duration_sec_default
+	batch := batch_size_default
 	if ld != "" {
 		if ld2, err := strconv.Atoi(ld); err == nil && ld2 > 0 {
-			lds = time.Second * time.Duration(ld2)
+			lds = ld2
 		}
 	}
 	if btch != "" {
@@ -28,8 +28,8 @@ func LoadConfig() WorkerConfig {
 		}
 	}
 	return WorkerConfig{
-		LeaseDuration: lds,
-		RenewEvery:    lds / 3,
+		LeaseDuration: time.Second * time.Duration(lds),
+		RenewEvery:    time.Second * time.Duration(lds/renew_lease_coef),
 		BatchSize:     batch,
 	}
 }

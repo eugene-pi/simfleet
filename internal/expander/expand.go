@@ -76,7 +76,7 @@ func ValidateSweep(schema map[string]core.ParamKind, sweep core.Sweep) error {
 		}
 		for _, v := range vals {
 			if v.Kind() != kind {
-				return fmt.Errorf("%w: %q ожидает %s, получено %s",
+				return fmt.Errorf("%w: %v ожидает %v, получено %v",
 					ErrWrongParamKind, name, kind, v.Kind())
 			}
 		}

@@ -84,3 +84,18 @@ func scoringHash(s core.Scoring) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
+
+// internal/store/experiments.go
+func (p *Postgres) FinalizeCompleted(ctx context.Context) (int, error) {
+	const q = `
+		UPDATE experiments e
+		   SET state = 'completed', completed_at = now()
+		 WHERE e.state = 'running'
+		   AND NOT EXISTS (
+		       SELECT 1 FROM jobs j
+		        WHERE j.experiment_id = e.id
+		          AND j.state IN ('queued', 'running')
+		   )`
+	tag, err := p.pool.Exec(ctx, q)
+	return int(tag.RowsAffected()), err
+}

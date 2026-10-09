@@ -1,4 +1,3 @@
-// internal/expander/cartesian.go
 package expander
 
 import (
