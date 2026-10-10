@@ -48,6 +48,15 @@
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "args": ["work", "${workspaceFolder}/examples/crossing.yaml"]
+    },
+    {
+      "name": "runlocal-ctrl",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/controller",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
     }
   ]
 }

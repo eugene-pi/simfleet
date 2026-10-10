@@ -7,6 +7,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -93,15 +94,23 @@ func work(ctx context.Context, st *store.Postgres, reg runner.Registry) error {
 	slog.Info("executor started")
 	failed, done, skipped := 0, 0, 0
 	for {
-		if n, err := st.ReclaimExpired(ctx, 50); err == nil && len(n) > 0 {
-			slog.Info("detached jobs became claimable again", "jobs_count", len(n))
-		}
 		ids, err := st.NextQueued(ctx, 20)
 		if err != nil {
 			return err
 		}
 		if len(ids) == 0 {
-			break
+			if wc.ExitWhenIdle {
+				active, err := st.HasActiveExperiments(ctx)
+				if err != nil {
+					return err
+				}
+				if !active {
+					slog.Info("активных экспериментов нет, выходим")
+					return nil
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
 		for _, jobID := range ids {
 			claimed, err := exec.Execute(ctx, jobID)
@@ -129,15 +138,23 @@ func runSingle(ctx context.Context, st *store.Postgres, registry runner.Registry
 	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), registry, config.WorkerID(), wc)
 
 	for {
-		if n, err := st.ReclaimExpired(ctx, 50); err == nil && len(n) > 0 {
-			slog.Info("detached jobs became claimable again", "jobs_count", len(n))
-		}
 		ids, err := st.NextQueuedForExperiment(ctx, expID, 100)
 		if err != nil {
 			return err
 		}
 		if len(ids) == 0 {
-			break
+			if wc.ExitWhenIdle {
+				active, err := st.HasActiveExperiments(ctx)
+				if err != nil {
+					return err
+				}
+				if !active {
+					slog.Info("активных экспериментов нет, выходим")
+					return nil
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
 		for _, id := range ids {
 			if _, err := exec.Execute(ctx, id); err != nil {

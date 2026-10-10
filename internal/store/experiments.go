@@ -99,3 +99,10 @@ func (p *Postgres) FinalizeCompleted(ctx context.Context) (int, error) {
 	tag, err := p.pool.Exec(ctx, q)
 	return int(tag.RowsAffected()), err
 }
+
+func (p *Postgres) HasActiveExperiments(ctx context.Context) (bool, error) {
+	const q = `SELECT EXISTS(SELECT 1 FROM experiments WHERE state = 'running')`
+	var ok bool
+	err := p.pool.QueryRow(ctx, q).Scan(&ok)
+	return ok, err
+}

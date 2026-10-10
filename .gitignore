@@ -4,3 +4,4 @@ bin/
 *.tfstate
 *.tfstate.*
 tfplan
+cmd/controller/__debug_bin1433501646
