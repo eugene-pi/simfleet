@@ -27,7 +27,7 @@
       "program": "${workspaceFolder}/cmd/runlocal",
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
-      "args": ["submit", "${workspaceFolder}/examples/crossing.yaml"]
+      "args": ["submit", "${workspaceFolder}/examples/crossing-small.yaml"]
     },
     {
       "name": "runlocal-spawn",
@@ -37,7 +37,7 @@
       "program": "${workspaceFolder}/cmd/runlocal",
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
-      "args": ["spawn", "${workspaceFolder}/examples/crossing.yaml"]
+      "args": ["spawn", "${workspaceFolder}/examples/crossing-small.yaml"]
     },
     {
       "name": "runlocal-work",

@@ -11,7 +11,7 @@ type Postgres struct {
 	pool *pgxpool.Pool
 }
 
-func NewPostgresStore(ctx context.Context, dsn string) (*Postgres, error) {
+func NewPostgresPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse dsn: %w", err)
@@ -26,6 +26,14 @@ func NewPostgresStore(ctx context.Context, dsn string) (*Postgres, error) {
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping: %w", err)
+	}
+	return pool, nil
+}
+
+func NewPostgresStore(ctx context.Context, dsn string) (*Postgres, error) {
+	pool, err := NewPostgresPool(ctx, dsn)
+	if err != nil || pool == nil {
+		return nil, fmt.Errorf("unable to create connections pool: %w", err)
 	}
 	return &Postgres{pool: pool}, nil
 }
