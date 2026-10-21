@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 
+	"github.com/eugene-pi/simfleet/internal/bus"
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/controller"
 	"github.com/eugene-pi/simfleet/internal/core"
@@ -21,7 +22,12 @@ func main() {
 			return err
 		}
 		defer store.Close()
-
-		return controller.New(store, cfg.Interval, cfg.ReclaimBatch).Run(ctx)
+		kcfg := config.LoadKafkaConfig()
+		bus, err := bus.NewKafka(kcfg)
+		if err != nil {
+			return err
+		}
+		defer bus.Close()
+		return controller.New(store, bus, cfg.Interval, cfg.ReclaimBatch).Run(ctx)
 	})
 }

@@ -16,9 +16,6 @@ scoring:
     - metric: min_distance_m
       good: 3.0
       bad: 0.5
-    - metric: max_decel_mps2
-      good: 2.0
-      bad: 8.0
   combine: min
 zones:
   - name: green

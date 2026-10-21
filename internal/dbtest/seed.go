@@ -113,6 +113,36 @@ func SeedJob(t *testing.T, pool *pgxpool.Pool, expID core.ExperimentID,
 	return jobID
 }
 
+// SeedExperimentWithJobs creates an experiment with n queued jobs and the
+// matching outbox rows — the same state CreateExperiment leaves behind.
+// The outbox part is what the publisher test actually operates on.
+func SeedExperimentWithJobs(t *testing.T, pool *pgxpool.Pool, n int) core.ExperimentID {
+	t.Helper()
+	ctx := context.Background()
+
+	expID := SeedExperiment(t, pool, core.Spec{Name: "pub-test", Runner: "fake"})
+
+	for i := range n {
+		jobID := SeedQueuedJob(t, pool, expID, i)
+
+		payload, err := json.Marshal(core.JobMessage{
+			JobID:        jobID,
+			ExperimentID: expID,
+			Runner:       "fake",
+			Idx:          i,
+		})
+		if err != nil {
+			t.Fatalf("marshal payload: %v", err)
+		}
+
+		const q = `INSERT INTO outbox (topic, msg_key, payload) VALUES ($1, $2, $3)`
+		if _, err := pool.Exec(ctx, q, "sim.jobs", jobID.String(), payload); err != nil {
+			t.Fatalf("insert outbox %d: %v", i, err)
+		}
+	}
+	return expID
+}
+
 // expireLease pushes the lease into the past so the reaper treats the job as
 // orphaned. Faster and more deterministic than waiting out a real lease.
 func ExpireLease(t *testing.T, pool *pgxpool.Pool, jobID core.JobID) {

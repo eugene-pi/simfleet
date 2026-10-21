@@ -41,9 +41,9 @@ func Build(cfg Config, names ...string) (Registry, error) {
 func (r Registry) Get(name string) (Runner, bool) { v, ok := r[name]; return v, ok }
 
 func (r Registry) Names() []string {
-	rv := make([]string, 0, len(r))
+	rv := make([]string, len(r))
 	idx := 0
-	for k, _ := range r {
+	for k := range r {
 		rv[idx] = k
 		idx++
 	}

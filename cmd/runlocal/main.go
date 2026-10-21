@@ -7,6 +7,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"sigs.k8s.io/yaml"
@@ -61,8 +62,28 @@ func run(dsn string) error {
 		}
 	case "work":
 		return work(ctx, st, registry)
+	case "spawnOld":
+		return spawnLocal(ctx, 5)
 	case "spawn":
-		return spawn(ctx, 5)
+		ctxw, cancel := context.WithCancel(ctx)
+		defer cancel()
+		cmds, err := spawn(ctxw, "./bin/worker", 5)
+		var wg sync.WaitGroup
+		for _, cmd := range cmds {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := cmd.Wait(); err != nil {
+					slog.Warn("process exited", "error", err)
+				}
+			}()
+		}
+		if err == nil {
+			err = waitForCompletion(ctxw, st)
+		}
+		cancel()
+		wg.Wait()
+		return err
 	default:
 		if len(os.Args) > 2 {
 			return fmt.Errorf("unknown command %v", os.Args[1])

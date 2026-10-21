@@ -42,8 +42,9 @@ func TestScoringPipeline(t *testing.T) {
 	dbtest.SeedResult(t, pool, expID, 2, map[string]float64{"dist": 5.0},
 		map[string]bool{"collision": true})
 
-	c := controller.New(st, time.Second, 100)
-	if err := c.Reconcile(ctx); err != nil {
+	pub := &testPublisher{}
+	c := controller.New(st, pub, time.Millisecond*10, 100)
+	if _, err := c.PublishOutbox(ctx); err != nil {
 		t.Fatal(err)
 	}
 

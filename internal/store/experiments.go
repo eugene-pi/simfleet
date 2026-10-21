@@ -76,6 +76,30 @@ func (p *Postgres) CreateExperiment(ctx context.Context, exp NewExperiment) erro
 		return fmt.Errorf("copy jobs: %w", err)
 	}
 
+	// Fill outbox in the same transaction.
+	// This is what makes the hand-off to Kafka safe without a distributed transaction.
+	obRows := make([][]any, len(exp.Jobs))
+	for i, j := range exp.Jobs {
+		payload, err := json.Marshal(core.JobMessage{
+			JobID:        j.ID,
+			ExperimentID: exp.ID,
+			Runner:       exp.Spec.Runner,
+			Idx:          j.Idx,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal outbox payload: %w", err)
+		}
+		obRows[i] = []any{exp.Runner, j.ID.String(), payload}
+	}
+
+	if _, err := tx.CopyFrom(ctx,
+		pgx.Identifier{"outbox"},
+		[]string{"topic", "msg_key", "payload"},
+		pgx.CopyFromRows(obRows),
+	); err != nil {
+		return fmt.Errorf("copy outbox: %w", err)
+	}
+
 	return tx.Commit(ctx)
 }
 

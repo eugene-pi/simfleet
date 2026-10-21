@@ -4,7 +4,10 @@ import (
 	"context"
 	"testing"
 	"time"
+	"uuid"
 
+	"github.com/eugene-pi/simfleet/internal/core"
+	"github.com/eugene-pi/simfleet/internal/job"
 	"github.com/eugene-pi/simfleet/internal/migrate"
 	"github.com/eugene-pi/simfleet/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -82,4 +85,29 @@ func NewPostgres(t *testing.T) *store.Postgres {
 	}
 	t.Cleanup(st.Close)
 	return st
+}
+
+func CountByState(ctx context.Context, t *testing.T, pool *pgxpool.Pool, expID core.ExperimentID, state job.State) int {
+	t.Helper()
+	const q = `
+		SELECT count(1) FROM jobs
+		 WHERE experiment_id = $1
+		 AND state = $2`
+	var cnt int
+	err := pool.QueryRow(ctx, q, uuid.UUID(expID), state).Scan(&cnt)
+	if err != nil {
+		t.Fatalf("count by state: %v", err)
+	}
+	return cnt
+}
+
+func CountUnpublished(t *testing.T, pool *pgxpool.Pool) int {
+	t.Helper()
+	var n int
+	err := pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM outbox WHERE published_at IS NULL`).Scan(&n)
+	if err != nil {
+		t.Fatalf("count unpublished: %v", err)
+	}
+	return n
 }

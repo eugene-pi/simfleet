@@ -7,6 +7,7 @@ import (
 )
 
 type WorkerConfig struct {
+	DatabaseURL   string
 	LeaseDuration time.Duration
 	RenewEvery    time.Duration
 	BatchSize     int
@@ -36,6 +37,7 @@ func LoadWorkerConfig() WorkerConfig {
 		}
 	}
 	return WorkerConfig{
+		DatabaseURL:   loadString(ENV_DATABASE_URL, ""),
 		LeaseDuration: time.Second * time.Duration(lds),
 		RenewEvery:    time.Second * time.Duration(lds/renew_lease_coef),
 		BatchSize:     batch,

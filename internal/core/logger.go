@@ -6,7 +6,7 @@ import (
 )
 
 func SetupLogger() *slog.Logger {
-	level := slog.LevelInfo
+	level := slog.LevelDebug
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		_ = level.UnmarshalText([]byte(v))
 	}
