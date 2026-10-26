@@ -11,9 +11,8 @@ import (
 
 func init() {
 	runner.Register(runner.Descriptor{
-		Name:       "slowcrossing",
-		Partitions: 4,
-		Profile:    core.Profile{Timeout: 30 * time.Second, Deterministic: true},
+		Name:    "slowcrossing",
+		Profile: core.Profile{Timeout: 30 * time.Second, Deterministic: true},
 		Params: map[string]core.ParamKind{
 			"vehicle_speed_mps":       core.KindNum, // initial vehicle's speed
 			"pedestrian_appears_at_m": core.KindNum, // initital distance between the vehicle and the ped

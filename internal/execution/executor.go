@@ -48,6 +48,9 @@ func (e *Executor) Execute(ctx context.Context, jobID core.JobID) (bool, error) 
 	if err != nil {
 		return false, fmt.Errorf("load task %s: %w", jobID, err)
 	}
+	if task.Runner != e.desc.Name {
+		return false, fmt.Errorf("unexpected task runner '%s'", task.Runner)
+	}
 	//TODO: exclude from prod
 	if e.wc.WorkerId == "w1" {
 		e.doom -= 1

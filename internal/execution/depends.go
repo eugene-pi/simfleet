@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/eugene-pi/simfleet/internal/core"
-	"github.com/eugene-pi/simfleet/internal/runner"
 	"github.com/eugene-pi/simfleet/internal/store"
 )
 
@@ -21,8 +20,4 @@ type Store interface {
 
 type Blob interface {
 	Put(ctx context.Context, key string, body io.Reader) error
-}
-
-type Registry interface {
-	Get(name string) (runner.Runner, bool)
 }

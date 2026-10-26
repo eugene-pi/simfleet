@@ -14,6 +14,7 @@ import (
 	"github.com/eugene-pi/simfleet/internal/execution"
 	"github.com/eugene-pi/simfleet/internal/runner"
 	_ "github.com/eugene-pi/simfleet/internal/runner/crossing"
+	_ "github.com/eugene-pi/simfleet/internal/runner/slowcrossing"
 	"github.com/eugene-pi/simfleet/internal/store"
 	"github.com/eugene-pi/simfleet/internal/worker"
 )
@@ -41,7 +42,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		cons, err := bus.NewKafkaConsumer(config.LoadKafkaConfig(), desc)
+		cons, err := bus.NewKafkaConsumer(config.LoadKafkaConfig())
 		if err != nil {
 			return err
 		}

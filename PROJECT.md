@@ -216,7 +216,7 @@ Offsets never leave `internal/bus`. The worker only says "this record is done".
 
 ### D-10. One runner per worker process
 
-`RUNNER=crossing` at startup. The worker builds exactly one implementation.
+`SIMFLEET_RUNNER=crossing` at startup. The worker builds exactly one implementation.
 
 Rationale: different workloads have incompatible resource profiles (simulation:
 64 MB, milliseconds; STT: hundreds of MB, minutes) and must scale

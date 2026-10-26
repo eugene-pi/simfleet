@@ -12,14 +12,11 @@ var (
 )
 
 // Descriptor is everything the platform needs to know about a runner without
-// knowing what it does: its name, how to deploy it, and what parameters it
-// accepts. Deployment-level values (topic, group, partitions) are derived
-// from the name, so adding a runner never touches platform code.
+// knowing what it does: its name, how to deploy it, and what parameters it accepts.
 type Descriptor struct {
-	Name       string
-	Partitions int32
-	Profile    core.Profile
-	Params     map[string]core.ParamKind
+	Name    string
+	Profile core.Profile
+	Params  map[string]core.ParamKind
 }
 
 // Config carries runner-specific settings from the environment. The platform

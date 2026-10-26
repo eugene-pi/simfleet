@@ -8,5 +8,6 @@ import (
 )
 
 type Runner interface {
+	// Run must be safe for concurrent use
 	Run(ctx context.Context, t core.Task) (core.Result, error)
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
-	"github.com/eugene-pi/simfleet/internal/runner"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
@@ -30,7 +29,7 @@ type KafkaConsumer struct {
 	wg      sync.WaitGroup
 }
 
-func NewKafkaConsumer(cfg config.KafkaConfig, desc runner.Descriptor) (*KafkaConsumer, error) {
+func NewKafkaConsumer(cfg config.KafkaConfig) (*KafkaConsumer, error) {
 	cl, err := kgo.NewClient(
 		kgo.SeedBrokers(cfg.Brokers...),
 		kgo.ConsumerGroup(cfg.Group),

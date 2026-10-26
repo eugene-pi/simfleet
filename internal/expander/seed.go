@@ -1,4 +1,3 @@
-// internal/expander/seed.go
 package expander
 
 import (
@@ -8,9 +7,6 @@ import (
 	"github.com/eugene-pi/simfleet/internal/core"
 )
 
-// DeriveSeed вычисляет зерно детерминированно из идентификатора
-// эксперимента и номера сочетания. Одинаковый вход всегда даёт
-// одинаковое зерно — это основа воспроизводимости прогонов.
 func DeriveSeed(expID core.ExperimentID, idx int) int64 {
 	h := fnv.New64a()
 	b := [16]byte(expID)
@@ -20,5 +16,5 @@ func DeriveSeed(expID core.ExperimentID, idx int) int64 {
 	binary.BigEndian.PutUint64(n[:], uint64(idx))
 	h.Write(n[:])
 
-	return int64(h.Sum64() &^ (1 << 63)) // сбросить знаковый бит: зерно неотрицательное
+	return int64(h.Sum64() &^ (1 << 63)) // always positive
 }

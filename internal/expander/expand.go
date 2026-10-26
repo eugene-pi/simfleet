@@ -14,16 +14,6 @@ type Store interface {
 	CreateExperiment(ctx context.Context, exp store.NewExperiment) error
 }
 
-type SchemaProvider interface {
-	ParamSchema() map[string]core.ParamKind
-}
-
-type Registry interface {
-	Get(name string) (runner.Runner, bool)
-	// Names нужен только для сообщения об ошибке
-	Names() []string
-}
-
 func Create(ctx context.Context, st Store, desc runner.Descriptor, spec core.Spec) (core.ExperimentID, int, error) {
 	if err := ValidateSweep(desc.Params, spec.Sweep); err != nil {
 		return core.ExperimentID{}, 0, err
