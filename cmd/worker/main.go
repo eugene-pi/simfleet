@@ -42,13 +42,16 @@ func main() {
 		if err != nil {
 			return err
 		}
+		exec, err := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, cfg)
+		if err != nil {
+			return err
+		}
 		cons, err := bus.NewKafkaConsumer(config.LoadKafkaConfig())
 		if err != nil {
 			return err
 		}
 		defer cons.Close()
 
-		exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, cfg)
 		return worker.New(cons, exec, cfg).Run(ctx)
 	})
 }

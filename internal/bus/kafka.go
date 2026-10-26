@@ -58,11 +58,17 @@ func ensureTopic(cl *kgo.Client, kcfg config.KafkaConfig) error {
 	return nil
 }
 
+// topicFor maps a runner to its Kafka topic. All runners share one topic for
+// now; per-runner topics only matter when two workloads run at the same time.
+func (k *Kafka) topicFor(_ string) string {
+	return k.cfg.Topic
+}
+
 func (k *Kafka) PublishBatch(ctx context.Context, rows []store.OutboxRow) error {
 	recs := make([]*kgo.Record, len(rows))
 	for i, r := range rows {
 		recs[i] = &kgo.Record{
-			Topic: k.cfg.Topic,
+			Topic: k.topicFor(r.Runner),
 			Key:   []byte(r.Key),
 			Value: r.Payload,
 		}

@@ -25,14 +25,20 @@ type Executor struct {
 	wc    config.WorkerConfig
 }
 
-func NewExecutor(st Store, b Blob, desc runner.Descriptor, r runner.Runner, wc config.WorkerConfig) *Executor {
+// NewExecutor fails on a non-positive Profile.Timeout: context.WithTimeout
+// would return an already-expired context, and every job would cancel instantly.
+func NewExecutor(st Store, b Blob, desc runner.Descriptor, r runner.Runner, wc config.WorkerConfig) (*Executor, error) {
+	if desc.Profile.Timeout <= 0 {
+		return nil, fmt.Errorf("runner %q: profile timeout must be positive, got %v",
+			desc.Name, desc.Profile.Timeout)
+	}
 	return &Executor{
 		store: st,
 		blob:  b,
 		r:     r,
 		desc:  desc,
 		wc:    wc,
-		doom:  rand.N(100) + 50}
+		doom:  rand.N(100) + 50}, nil
 }
 
 func (e *Executor) Execute(ctx context.Context, jobID core.JobID) (bool, error) {

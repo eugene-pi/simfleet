@@ -8,9 +8,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// OutboxRow is a message waiting to be sent. Runner says what kind of job it
+// is; mapping that to a broker destination is the bus's job, not the store's.
 type OutboxRow struct {
 	ID      int64
-	Topic   string
+	Runner  string
 	Key     string
 	Payload []byte
 }
@@ -26,7 +28,7 @@ func (p *Postgres) FetchUnpublished(ctx context.Context, limit int) ([]OutboxRow
 	}
 
 	const q = `
-		SELECT id, topic, msg_key, payload
+		SELECT id, runner, msg_key, payload
 		  FROM outbox
 		 WHERE published_at IS NULL
 		 ORDER BY id
@@ -42,12 +44,12 @@ func (p *Postgres) FetchUnpublished(ctx context.Context, limit int) ([]OutboxRow
 	out := make([]OutboxRow, 0, limit)
 	for rows.Next() {
 		var id int64
-		var topic, msg_key string
+		var runner, msg_key string
 		var payload []byte
-		_ = rows.Scan(&id, &topic, &msg_key, &payload)
+		_ = rows.Scan(&id, &runner, &msg_key, &payload)
 		out = append(out, OutboxRow{
 			ID:      id,
-			Topic:   topic,
+			Runner:  runner,
 			Key:     msg_key,
 			Payload: payload,
 		})

@@ -94,7 +94,7 @@ func (p *Postgres) CreateExperiment(ctx context.Context, exp NewExperiment) erro
 
 	if _, err := tx.CopyFrom(ctx,
 		pgx.Identifier{"outbox"},
-		[]string{"topic", "msg_key", "payload"},
+		[]string{"runner", "msg_key", "payload"},
 		pgx.CopyFromRows(obRows),
 	); err != nil {
 		return fmt.Errorf("copy outbox: %w", err)

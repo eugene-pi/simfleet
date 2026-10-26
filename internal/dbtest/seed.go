@@ -135,8 +135,8 @@ func SeedExperimentWithJobs(t *testing.T, pool *pgxpool.Pool, n int) core.Experi
 			t.Fatalf("marshal payload: %v", err)
 		}
 
-		const q = `INSERT INTO outbox (topic, msg_key, payload) VALUES ($1, $2, $3)`
-		if _, err := pool.Exec(ctx, q, "sim.jobs", jobID.String(), payload); err != nil {
+		const q = `INSERT INTO outbox (runner, msg_key, payload) VALUES ($1, $2, $3)`
+		if _, err := pool.Exec(ctx, q, "fake", jobID.String(), payload); err != nil {
 			t.Fatalf("insert outbox %d: %v", i, err)
 		}
 	}

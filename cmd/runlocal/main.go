@@ -130,7 +130,10 @@ func work(ctx context.Context, st *store.Postgres) error {
 	if err != nil {
 		return err
 	}
-	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, wc)
+	exec, err := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, wc)
+	if err != nil {
+		return err
+	}
 
 	slog.Info("executor started")
 	failed, done, skipped := 0, 0, 0
@@ -186,7 +189,10 @@ func runSingle(ctx context.Context, st *store.Postgres, path string) error {
 	if err != nil {
 		return err
 	}
-	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, wc)
+	exec, err := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, wc)
+	if err != nil {
+		return err
+	}
 
 	for {
 		ids, err := st.NextQueuedForExperiment(ctx, expID, 100)

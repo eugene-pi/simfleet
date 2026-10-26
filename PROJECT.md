@@ -351,7 +351,7 @@ type Runner interface {                // one method now
 func Register(d Descriptor, f Factory)     // from init
 func Get(name string) (Descriptor, bool)
 func Names() []string
-func Build(name string, cfg Config) (Runner, error)   // worker only
+func Build(name string, env Environment) (Runner, error)   // worker only
 ```
 
 **Resolved while deciding this — do not re-litigate:**
@@ -362,33 +362,45 @@ func Build(name string, cfg Config) (Runner, error)   // worker only
 - `MemoryMB` does **not** belong in `Descriptor` either. It is a deployment
   property and will be written in the Kubernetes manifest anyway; keeping it in
   both places guarantees they diverge.
-- **The controller needs no runner registry at all.** The topic is already
-  written into `outbox.topic` at submit time, when the runner name is known.
-  The controller reads rows and publishes to `rec.Topic`. For `EnsureTopic` at
-  startup it takes `KAFKA_TOPIC` from config.
-- Only `cmd/simfleet` (submit) and `cmd/worker` (execute) import runner
-  packages.
+- **The controller needs no runner registry at all.** The runner name is
+  written into the outbox row at submit time. The controller reads rows and
+  hands them to the bus. For `EnsureTopic` at startup it takes `KAFKA_TOPIC`
+  from config.
+- **Broker vocabulary stays inside `bus`.** Topics, groups and partitions are
+  Kafka internals: `runner`, `expander` and `store` never mention them, and
+  `NewExperiment` / `OutboxRow` carry only the `Runner` name. `bus` maps runner
+  → destination (`Kafka.topicFor`, currently always `KAFKA_TOPIC`). Swapping
+  Kafka for RabbitMQ means a new `bus` adapter, nothing else. The DB column is
+  `outbox.runner` (renamed from `topic` in migration 004).
+- Only submit (currently `runlocal submit`; `cmd/simfleet` does not exist yet)
+  and `cmd/worker` (execute) import runner packages.
 - **One topic, one group for now** (`sim.jobs`, `simfleet-workers`). Per-runner
   topics matter only when two workloads run *simultaneously* — not when one is
-  swapped for the other. `Descriptor.Topic()`/`Group()` may exist but return the
-  shared constants until then.
+  swapped for the other.
 
 **Remaining mechanical work:**
 
-- [ ] Move `Name`/`Profile`/`ParamSchema` out of `Crossing` methods into the
+- [x] Move `Name`/`Profile`/`ParamSchema` out of `Crossing` methods into the
       `Register` call
-- [ ] `execution.Executor` holds one `runner.Runner` + name + profile, built
-      once at startup (not per job). Document that implementations must be safe
-      for concurrent use — one instance is shared across jobs.
-- [ ] `expander` calls `runner.Get` directly instead of taking a `Registry`
-      interface
-- [ ] `cmd/worker`: `runner.Build(cfg.Runner, ...)`, fail fast on unknown name
+- [x] `execution.Executor` holds one `runner.Runner` + descriptor, built
+      once at startup (not per job). `Runner.Run` is documented as safe for
+      concurrent use — one instance is shared across jobs.
+- [x] `expander.Create` takes a `runner.Descriptor` (resolved by the caller via
+      `runner.Get`) instead of a `Registry` interface — easier to test than a
+      global lookup inside the package
+- [x] `cmd/worker`: `runner.Build(cfg.Runner, ...)`, fail fast on unknown name
       with the available list in the message
-- [ ] Remove `topicsFor(reg)` and any `runner.Names()` call from
+- [x] Remove `topicsFor(reg)` and any `runner.Names()` call from
       `cmd/controller` — this is what was dragging the imports in
-- [ ] Validate `Profile.Timeout != 0` at executor construction (a zero timeout
+- [x] `OutboxRow.Topic` renamed to `Runner`; `bus.Kafka.topicFor` maps it to
+      the Kafka topic, so the store knows nothing about the broker
+- [x] Validate `Profile.Timeout > 0` at executor construction (a zero timeout
       makes `context.WithTimeout` return an already-expired context, and every
-      job cancels instantly)
+      job cancels instantly). `NewExecutor` returns an error; the worker builds
+      the executor before joining the consumer group, so it fails fast.
+- [ ] Runner mismatch (`task.Runner != desc.Name`) should `MarkFailed` the job,
+      not just return an error — otherwise it sits in `running` until the lease
+      expires and burns all attempts
 
 ### Other loose ends
 
