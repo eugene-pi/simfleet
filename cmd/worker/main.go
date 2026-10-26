@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -32,19 +33,21 @@ func main() {
 			return err
 		}
 		defer st.Close()
-
-		reg, err := runner.Build(runner.Config{WorkDir: os.TempDir()})
+		desc, ok := runner.Get(cfg.Runner)
+		if !ok {
+			return fmt.Errorf("runner %s unavailable. Enabled runners are %v", cfg.Runner, runner.Names())
+		}
+		r, err := runner.Build(cfg.Runner, runner.Environment{WorkDir: os.TempDir()})
 		if err != nil {
 			return err
 		}
-		kcfg := config.LoadKafkaConfig()
-		cons, err := bus.NewKafkaConsumer(kcfg.Brokers, kcfg.Group, reg.Names())
+		cons, err := bus.NewKafkaConsumer(config.LoadKafkaConfig(), desc)
 		if err != nil {
 			return err
 		}
 		defer cons.Close()
 
-		exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), reg, config.WorkerID(), cfg)
-		return worker.New(cons, exec).Run(ctx)
+		exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, cfg)
+		return worker.New(cons, exec, cfg).Run(ctx)
 	})
 }

@@ -12,10 +12,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func jobTopic(runner string) string {
-	return "sim.jobs." + runner
-}
-
 type Kafka struct {
 	cl  *kgo.Client
 	cfg config.KafkaConfig
@@ -34,6 +30,7 @@ func NewKafka(cfg config.KafkaConfig) (*Kafka, error) {
 		cl.Close()
 		return nil, fmt.Errorf("kafka ping: %w", err)
 	}
+	ensureTopic(cl, cfg)
 	return &Kafka{
 		cl:  cl,
 		cfg: cfg,
@@ -44,14 +41,14 @@ func (k *Kafka) Close() {
 	k.cl.Close()
 }
 
-// EnsureTopic creates the topic if it is missing. Idempotent: an existing
+// ensureTopic creates the topic if it is missing. Idempotent: an existing
 // topic is left alone, so every process can safely call this at startup.
-func (k *Kafka) EnsureTopic(ctx context.Context, topic string) error {
-	adm := kadm.NewClient(k.cl)
+func ensureTopic(cl *kgo.Client, kcfg config.KafkaConfig) error {
+	adm := kadm.NewClient(cl)
 	cfg := map[string]*string{
 		"retention.ms": kadm.StringPtr("86400000"), // 24h
 	}
-	resp, err := adm.CreateTopic(ctx, int32(k.cfg.Partitions), -1, cfg, jobTopic(topic))
+	resp, err := adm.CreateTopic(context.Background(), int32(kcfg.Partitions), -1, cfg, kcfg.Topic)
 	if err != nil {
 		return err
 	}
@@ -65,7 +62,7 @@ func (k *Kafka) PublishBatch(ctx context.Context, rows []store.OutboxRow) error 
 	recs := make([]*kgo.Record, len(rows))
 	for i, r := range rows {
 		recs[i] = &kgo.Record{
-			Topic: jobTopic(r.Topic),
+			Topic: k.cfg.Topic,
 			Key:   []byte(r.Key),
 			Value: r.Payload,
 		}

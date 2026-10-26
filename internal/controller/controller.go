@@ -27,26 +27,23 @@ type Store interface {
 // Publisher is all the controller needs from the bus: a way to send a batch.
 type Publisher interface {
 	PublishBatch(ctx context.Context, rows []store.OutboxRow) error
-	EnsureTopic(ctx context.Context, topic string) error
 }
 
 type Controller struct {
-	store       Store
-	publisher   Publisher
-	interval    time.Duration
-	batch       int
-	lastPurge   time.Time
-	knownTopics map[string]bool
+	store     Store
+	publisher Publisher
+	interval  time.Duration
+	batch     int
+	lastPurge time.Time
 }
 
 func New(st Store, pub Publisher, interval time.Duration, batch int) *Controller {
 	return &Controller{
-		store:       st,
-		publisher:   pub,
-		interval:    interval,
-		batch:       batch,
-		lastPurge:   time.Now(),
-		knownTopics: make(map[string]bool),
+		store:     st,
+		publisher: pub,
+		interval:  interval,
+		batch:     batch,
+		lastPurge: time.Now(),
 	}
 }
 
@@ -189,9 +186,6 @@ func (c *Controller) PublishOutbox(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	for _, row := range rows {
-		c.ensureTopicFor(ctx, row.Topic)
-	}
 	if err := c.publisher.PublishBatch(ctx, rows); err != nil {
 		return 0, fmt.Errorf("publish: %w", err)
 	}
@@ -207,15 +201,4 @@ func (c *Controller) PublishOutbox(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("commit: %w", err)
 	}
 	return len(rows), nil
-}
-
-func (c *Controller) ensureTopicFor(ctx context.Context, topic string) error {
-	if c.knownTopics[topic] {
-		return nil
-	}
-	if err := c.publisher.EnsureTopic(ctx, topic); err != nil {
-		return err
-	}
-	c.knownTopics[topic] = true
-	return nil
 }

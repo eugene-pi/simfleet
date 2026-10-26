@@ -12,24 +12,31 @@ import (
 
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
+	"github.com/eugene-pi/simfleet/internal/runner"
 	"github.com/eugene-pi/simfleet/internal/store"
 )
 
 type Executor struct {
-	store    Store
-	blob     Blob
-	runners  Registry
-	workerID string
-	doom     int
-	wc       config.WorkerConfig
+	store Store
+	blob  Blob
+	desc  runner.Descriptor
+	r     runner.Runner
+	doom  int // test only
+	wc    config.WorkerConfig
 }
 
-func NewExecutor(st Store, b Blob, reg Registry, workerID string, wc config.WorkerConfig) *Executor {
-	return &Executor{store: st, blob: b, runners: reg, workerID: workerID, wc: wc, doom: rand.N(100) + 50}
+func NewExecutor(st Store, b Blob, desc runner.Descriptor, r runner.Runner, wc config.WorkerConfig) *Executor {
+	return &Executor{
+		store: st,
+		blob:  b,
+		r:     r,
+		desc:  desc,
+		wc:    wc,
+		doom:  rand.N(100) + 50}
 }
 
 func (e *Executor) Execute(ctx context.Context, jobID core.JobID) (bool, error) {
-	attempt, err := e.store.Claim(ctx, jobID, e.workerID, e.wc.LeaseDuration)
+	attempt, err := e.store.Claim(ctx, jobID, e.wc.WorkerId, e.wc.LeaseDuration)
 	if errors.Is(err, store.ErrNotClaimable) {
 		return false, nil
 	}
@@ -41,26 +48,21 @@ func (e *Executor) Execute(ctx context.Context, jobID core.JobID) (bool, error) 
 	if err != nil {
 		return false, fmt.Errorf("load task %s: %w", jobID, err)
 	}
-	runner, ok := e.runners.Get(task.Runner)
-	if !ok {
-		return false, e.store.MarkFailed(ctx, jobID, attempt, "unknown runner: "+task.Runner)
-	}
-
-	if e.workerID == "w1" {
+	//TODO: exclude from prod
+	if e.wc.WorkerId == "w1" {
 		e.doom -= 1
 		if e.doom == 0 {
 			os.Exit(137)
 		}
 	}
 
-	// Контекст, привязанный к аренде: как только её не удаётся продлить,
-	// прогон отменяется.
-	runCtx, cancel := context.WithTimeout(ctx, runner.Profile().Timeout)
+	// context tied with lease duration.
+	runCtx, cancel := context.WithTimeout(ctx, e.desc.Profile.Timeout)
 	defer cancel()
 
 	go e.keepLease(runCtx, cancel, jobID, attempt)
 
-	res, err := runner.Run(runCtx, task)
+	res, err := e.r.Run(runCtx, task)
 	if err != nil {
 		return false, e.store.ReleaseForRetry(ctx, jobID, attempt, err.Error())
 	}

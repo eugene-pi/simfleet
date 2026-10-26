@@ -10,9 +10,9 @@ import (
 
 type ControllerConfig struct {
 	DatabaseURL   string
-	Interval      time.Duration // период цикла согласования
-	ReclaimBatch  int           // сколько аренд возвращать за проход
-	LeaseDuration time.Duration // должен совпадать с тем, что ставит Claim
+	Interval      time.Duration // reconciliation period
+	ReclaimBatch  int           // max number of leases revoked during 1 rec. period
+	LeaseDuration time.Duration // depends on Claim duration
 }
 
 func LoadControllerConfig() (ControllerConfig, error) {

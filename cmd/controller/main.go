@@ -22,8 +22,7 @@ func main() {
 			return err
 		}
 		defer store.Close()
-		kcfg := config.LoadKafkaConfig()
-		bus, err := bus.NewKafka(kcfg)
+		bus, err := bus.NewKafka(config.LoadKafkaConfig())
 		if err != nil {
 			return err
 		}

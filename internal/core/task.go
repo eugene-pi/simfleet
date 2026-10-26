@@ -16,5 +16,4 @@ type Task struct {
 type Profile struct {
 	Timeout       time.Duration
 	Deterministic bool // повторяемость прогоном или только записью
-	MemoryMB      int
 }

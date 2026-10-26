@@ -20,6 +20,7 @@ import (
 	"github.com/eugene-pi/simfleet/internal/expander"
 	"github.com/eugene-pi/simfleet/internal/runner"
 	_ "github.com/eugene-pi/simfleet/internal/runner/crossing"
+	_ "github.com/eugene-pi/simfleet/internal/runner/slowcrossing"
 	"github.com/eugene-pi/simfleet/internal/store"
 )
 
@@ -47,27 +48,35 @@ func run(dsn string) error {
 		return err
 	}
 	defer st.Close()
-	registry, err := runner.Build(runner.Config{WorkDir: os.TempDir()})
-	if err != nil {
-		return err
-	}
 
 	switch os.Args[1] {
 	case "submit":
 		if len(os.Args) > 2 {
-			_, err := submit(ctx, st, registry, os.Args[2])
+			_, err := submit(ctx, st, os.Args[2])
 			return err
 		} else {
 			return errors.New("usage: runlocal submit <spec.yaml>")
 		}
 	case "work":
-		return work(ctx, st, registry)
+		return work(ctx, st)
 	case "spawnOld":
-		return spawnLocal(ctx, 5)
+		var runnerName string
+		if len(os.Args) > 2 {
+			if spec, err := loadSpec(os.Args[2]); err == nil {
+				runnerName = spec.Runner
+			}
+		}
+		return spawnLocal(ctx, runnerName, 5)
 	case "spawn":
+		var runnerName string
+		if len(os.Args) > 2 {
+			if spec, err := loadSpec(os.Args[2]); err == nil {
+				runnerName = spec.Runner
+			}
+		}
 		ctxw, cancel := context.WithCancel(ctx)
 		defer cancel()
-		cmds, err := spawn(ctxw, "./bin/worker", 5)
+		cmds, err := spawn(ctxw, "./bin/worker", runnerName, 5)
 		var wg sync.WaitGroup
 		for _, cmd := range cmds {
 			wg.Add(1)
@@ -89,15 +98,19 @@ func run(dsn string) error {
 			return fmt.Errorf("unknown command %v", os.Args[1])
 		}
 	}
-	return runSingle(ctx, st, registry, os.Args[1])
+	return runSingle(ctx, st, os.Args[1])
 }
 
-func submit(ctx context.Context, st *store.Postgres, reg runner.Registry, path string) (core.ExperimentID, error) {
+func submit(ctx context.Context, st *store.Postgres, path string) (core.ExperimentID, error) {
 	spec, err := loadSpec(path)
 	if err != nil {
 		return core.ExperimentID{}, err
 	}
-	expID, n, err := expander.Create(ctx, st, reg, spec)
+	desc, ok := runner.Get(spec.Runner)
+	if !ok {
+		return core.ExperimentID{}, fmt.Errorf("runner %s unavailable. Enabled runners are %v", spec.Runner, runner.Names())
+	}
+	expID, n, err := expander.Create(ctx, st, desc, spec)
 	if err != nil {
 		return core.ExperimentID{}, err
 	}
@@ -106,11 +119,18 @@ func submit(ctx context.Context, st *store.Postgres, reg runner.Registry, path s
 	return expID, nil
 }
 
-func work(ctx context.Context, st *store.Postgres, reg runner.Registry) error {
-	workerID := config.WorkerID()
-	slog.SetDefault(slog.With("worker_id", workerID))
+func work(ctx context.Context, st *store.Postgres) error {
 	wc := config.LoadWorkerConfig()
-	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), reg, workerID, wc)
+	slog.SetDefault(slog.With("worker_id", wc.WorkerId))
+	desc, ok := runner.Get(wc.Runner)
+	if !ok {
+		return fmt.Errorf("runner %s unavailable. Enabled runners are %v", wc.Runner, runner.Names())
+	}
+	r, err := runner.Build(wc.Runner, runner.Environment{WorkDir: os.TempDir()})
+	if err != nil {
+		return err
+	}
+	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, wc)
 
 	slog.Info("executor started")
 	failed, done, skipped := 0, 0, 0
@@ -126,8 +146,8 @@ func work(ctx context.Context, st *store.Postgres, reg runner.Registry) error {
 					return err
 				}
 				if !active {
-					slog.Info("активных экспериментов нет, выходим")
-					return nil
+					slog.Info("No active experiments, exiting")
+					break
 				}
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -149,14 +169,24 @@ func work(ctx context.Context, st *store.Postgres, reg runner.Registry) error {
 	return nil
 }
 
-func runSingle(ctx context.Context, st *store.Postgres, registry runner.Registry, path string) error {
-	expID, err := submit(ctx, st, registry, path)
+func runSingle(ctx context.Context, st *store.Postgres, path string) error {
+	expID, err := submit(ctx, st, path)
 	if err != nil {
 		return err
 	}
 	wc := config.LoadWorkerConfig()
-
-	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), registry, config.WorkerID(), wc)
+	if spec, err := loadSpec(path); err == nil {
+		wc.Runner = spec.Runner
+	}
+	desc, ok := runner.Get(wc.Runner)
+	if !ok {
+		return fmt.Errorf("runner %s unavailable. Enabled runners are %v", wc.Runner, runner.Names())
+	}
+	r, err := runner.Build(wc.Runner, runner.Environment{WorkDir: os.TempDir()})
+	if err != nil {
+		return err
+	}
+	exec := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, wc)
 
 	for {
 		ids, err := st.NextQueuedForExperiment(ctx, expID, 100)
@@ -170,8 +200,8 @@ func runSingle(ctx context.Context, st *store.Postgres, registry runner.Registry
 					return err
 				}
 				if !active {
-					slog.Info("активных экспериментов нет, выходим")
-					return nil
+					slog.Info("No active experiments, exiting")
+					break
 				}
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -184,7 +214,7 @@ func runSingle(ctx context.Context, st *store.Postgres, registry runner.Registry
 		}
 	}
 
-	// 3. Сводка
+	// 3. Summary
 	sum, err := st.Summary(ctx, expID)
 	if err != nil {
 		return err

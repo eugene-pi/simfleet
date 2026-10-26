@@ -10,11 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/store"
 )
 
 // run workers as runLocal executable with param, reads jobs from db
-func spawnLocal(ctx context.Context, n int) error {
+func spawnLocal(ctx context.Context, runner string, n int) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -24,7 +25,7 @@ func spawnLocal(ctx context.Context, n int) error {
 	for i := range n {
 		slog.Info("starting worker", "worker", i+1)
 		cmd := exec.CommandContext(ctx, self, "work")
-		cmd.Env = append(os.Environ(), fmt.Sprintf("WORKER_ID=w%d", i+1))
+		cmd.Env = append(os.Environ(), fmt.Sprintf("%s=w%d", config.ENV_WORKER_ID, i+1), config.ENV_SIMFLEET_RUNNER+"="+runner)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -48,7 +49,7 @@ func spawnLocal(ctx context.Context, n int) error {
 // spawn starts n copies of a binary, each with its own WORKER_ID, and waits
 // for all of them. The binaries are the real ones that ship in the images,
 // so what runlocal exercises is what production runs.
-func spawn(ctx context.Context, bin string, n int) ([]*exec.Cmd, error) {
+func spawn(ctx context.Context, bin string, runner string, n int) ([]*exec.Cmd, error) {
 	path, err := exec.LookPath(bin)
 	if err != nil {
 		return nil, fmt.Errorf("%s not found, run make build: %w", bin, err)
@@ -57,7 +58,7 @@ func spawn(ctx context.Context, bin string, n int) ([]*exec.Cmd, error) {
 	cmds := make([]*exec.Cmd, 0, n)
 	for i := range n {
 		cmd := exec.CommandContext(ctx, path)
-		cmd.Env = append(os.Environ(), fmt.Sprintf("WORKER_ID=w%d", i+1))
+		cmd.Env = append(os.Environ(), fmt.Sprintf("%s=w%d", config.ENV_WORKER_ID, i+1), config.ENV_SIMFLEET_RUNNER+"="+runner)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 

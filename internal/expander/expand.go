@@ -3,7 +3,6 @@ package expander
 import (
 	"context"
 	"fmt"
-	"strings"
 	"uuid"
 
 	"github.com/eugene-pi/simfleet/internal/core"
@@ -25,13 +24,8 @@ type Registry interface {
 	Names() []string
 }
 
-func Create(ctx context.Context, st Store, reg Registry, spec core.Spec) (core.ExperimentID, int, error) {
-	r, ok := reg.Get(spec.Runner)
-	if !ok {
-		return core.ExperimentID{}, 0, fmt.Errorf("%w: %q (доступны: %s)",
-			runner.ErrUnknownRunner, spec.Runner, strings.Join(reg.Names(), ", "))
-	}
-	if err := ValidateSweep(r.ParamSchema(), spec.Sweep); err != nil {
+func Create(ctx context.Context, st Store, desc runner.Descriptor, spec core.Spec) (core.ExperimentID, int, error) {
+	if err := ValidateSweep(desc.Params, spec.Sweep); err != nil {
 		return core.ExperimentID{}, 0, err
 	}
 

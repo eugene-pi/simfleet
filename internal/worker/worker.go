@@ -8,6 +8,7 @@ import (
 
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
+	"golang.org/x/sync/errgroup"
 )
 
 // Consumer is the bus side the worker needs: a batch of records and a way to
@@ -15,6 +16,7 @@ import (
 type Consumer interface {
 	Poll(ctx context.Context) (core.Batch, error)
 	Commit(ctx context.Context) error
+	CommitOffsets(ctx context.Context, offsets map[int32]int64) error
 }
 
 // Executor runs one job end to end. Returns false when the job was already
@@ -23,80 +25,91 @@ type Executor interface {
 	Execute(ctx context.Context, jobID core.JobID) (bool, error)
 }
 
+// Records flow one way, completed offsets flow back. The reader can keep
+// polling while jobs are in flight, and the committer knows exactly how far
+// processing actually got — not how far reading got.
+type processed struct {
+	Partition int32
+	Offset    int64
+}
+
 // Worker consumes job messages from the bus and runs them through the
 // executor. It owns the consume loop and nothing else: claiming, leases and
 // result writing all live in the executor.
 type Worker struct {
 	consumer Consumer
 	exec     Executor
+	cfg      config.WorkerConfig
 	log      *slog.Logger
 }
 
-func New(c Consumer, e Executor) *Worker {
+func New(c Consumer, e Executor, cfg config.WorkerConfig) *Worker {
 	return &Worker{
 		consumer: c,
 		exec:     e,
-		log:      slog.Default().With("worker", config.WorkerID()),
+		cfg:      cfg,
+		log:      slog.Default().With("worker", cfg.WorkerId),
 	}
 }
 
-// Run consumes until the context is cancelled. It does not stop on job
-// failures: a failed job is already recorded in Postgres, and the controller
-// decides whether to retry it.
-// Потребляет до отмены контекста. Не останавливается на сбоях заданий:
-// отказавшее задание уже записано в Postgres, и решение о повторе принимает
-// контроллер.
+// Reader keeps polling while a job is in flight, so the group heartbeat and
+// the fetch loop never wait on simulation work. Done offsets flow back; with
+// a single processor they arrive in order, so the commit boundary is simply
+// the last one received.
 func (w *Worker) Run(ctx context.Context) error {
-	var done, skipped, failed int
+	const chBufferCoef int = 10 // multiplies
+	records := make(chan core.Record, w.cfg.BatchSize*chBufferCoef)
+	done := make(chan processed, w.cfg.BatchSize*chBufferCoef)
 
-	defer func() {
-		w.log.Info("worker stopped", "done", done, "skipped", skipped, "failed", failed)
-	}()
+	g, ctx := errgroup.WithContext(ctx)
 
+	g.Go(func() error { return w.readLoop(ctx, records) })
+	g.Go(func() error { return w.processLoop(ctx, records, done) })
+
+	return g.Wait()
+}
+
+func (w *Worker) readLoop(ctx context.Context, out chan<- core.Record) error {
+	defer close(out) // tells processLoop to drain and exit
+	// сообщает processLoop, что пора дочитать и выйти
 	for {
 		batch, err := w.consumer.Poll(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil // shutdown, not a failure
+				return nil
 			}
 			return fmt.Errorf("poll: %w", err)
 		}
 		if batch.Closed {
 			return nil
 		}
-
 		for _, rec := range batch.Records {
-			// Stop between records rather than inside a job: the executor
-			// handles its own cancellation.
-			// Останавливаемся между заданиями, а не внутри: отменой самого
-			// задания занимается executor.
-			if ctx.Err() != nil {
+			select {
+			case out <- rec:
+			case <-ctx.Done():
 				return nil
-			}
-
-			claimed, err := w.handle(ctx, rec)
-			switch {
-			case err != nil:
-				failed++
-			case claimed:
-				done++
-			default:
-				skipped++
-			}
-		}
-
-		// Commit only after the whole batch is processed. A crash before this
-		// means redelivery, which Claim absorbs; committing earlier would
-		// silently drop work.
-		if len(batch.Records) > 0 {
-			if err := w.consumer.Commit(ctx); err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
-				w.log.Error("commit offsets", "error", err)
 			}
 		}
 	}
+}
+
+func (w *Worker) processLoop(ctx context.Context, in <-chan core.Record, out chan<- processed) error {
+	defer close(out)
+
+	for rec := range in {
+		if ctx.Err() != nil {
+			return nil
+		}
+		w.handle(ctx, rec) // errors are logged, not propagated
+		// ошибки журналируются, а не распространяются
+
+		select {
+		case out <- processed{Partition: rec.Partition, Offset: rec.Offset}:
+		case <-ctx.Done():
+			return nil
+		}
+	}
+	return nil
 }
 
 // handle processes one record. A record that cannot be parsed is skipped: it
