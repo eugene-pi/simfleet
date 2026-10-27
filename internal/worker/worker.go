@@ -12,25 +12,17 @@ import (
 )
 
 // Consumer is the bus side the worker needs: a batch of records and a way to
-// commit progress.
+// say a record is finished. When and how progress is committed is the bus's
+// business; offsets never reach the worker.
 type Consumer interface {
 	Poll(ctx context.Context) (core.Batch, error)
-	Commit(ctx context.Context) error
-	CommitOffsets(ctx context.Context, offsets map[int32]int64) error
+	Done(rec core.Record)
 }
 
 // Executor runs one job end to end. Returns false when the job was already
 // claimed by someone else.
 type Executor interface {
 	Execute(ctx context.Context, jobID core.JobID) (bool, error)
-}
-
-// Records flow one way, completed offsets flow back. The reader can keep
-// polling while jobs are in flight, and the committer knows exactly how far
-// processing actually got — not how far reading got.
-type processed struct {
-	Partition int32
-	Offset    int64
 }
 
 // Worker consumes job messages from the bus and runs them through the
@@ -52,19 +44,18 @@ func New(c Consumer, e Executor, cfg config.WorkerConfig) *Worker {
 	}
 }
 
-// Reader keeps polling while a job is in flight, so the group heartbeat and
-// the fetch loop never wait on simulation work. Done offsets flow back; with
-// a single processor they arrive in order, so the commit boundary is simply
-// the last one received.
+// Reader keeps polling while a job is in flight, so the fetch loop never
+// waits on simulation work. The processor reports each finished record back
+// to the consumer, which commits how far processing got — not how far
+// reading got.
 func (w *Worker) Run(ctx context.Context) error {
 	const chBufferCoef int = 10 // multiplies
 	records := make(chan core.Record, w.cfg.BatchSize*chBufferCoef)
-	done := make(chan processed, w.cfg.BatchSize*chBufferCoef)
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error { return w.readLoop(ctx, records) })
-	g.Go(func() error { return w.processLoop(ctx, records, done) })
+	g.Go(func() error { return w.processLoop(ctx, records) })
 
 	return g.Wait()
 }
@@ -93,9 +84,7 @@ func (w *Worker) readLoop(ctx context.Context, out chan<- core.Record) error {
 	}
 }
 
-func (w *Worker) processLoop(ctx context.Context, in <-chan core.Record, out chan<- processed) error {
-	defer close(out)
-
+func (w *Worker) processLoop(ctx context.Context, in <-chan core.Record) error {
 	for rec := range in {
 		if ctx.Err() != nil {
 			return nil
@@ -103,11 +92,13 @@ func (w *Worker) processLoop(ctx context.Context, in <-chan core.Record, out cha
 		w.handle(ctx, rec) // errors are logged, not propagated
 		// ошибки журналируются, а не распространяются
 
-		select {
-		case out <- processed{Partition: rec.Partition, Offset: rec.Offset}:
-		case <-ctx.Done():
+		// A record interrupted by shutdown is not done: the job may still be
+		// queued with no other message pointing at it. Leaving it uncommitted
+		// gets it redelivered to another worker.
+		if ctx.Err() != nil {
 			return nil
 		}
+		w.consumer.Done(rec)
 	}
 	return nil
 }

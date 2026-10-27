@@ -223,6 +223,24 @@ worse.
 
 Offsets never leave `internal/bus`. The worker only says "this record is done".
 
+Details that keep this correct:
+- Commits are **synchronous** (`CommitOffsetsSync`); a failed commit puts the
+  offsets back so the next tick retries. franz-go explicitly asks for a
+  blocking commit in `OnPartitionsRevoked` when autocommit is disabled.
+- The consumer tracks which partitions it **owns** (assigned / revoked / lost).
+  A job that finishes after its partition moved away is ignored by `Done`:
+  committing it could overwrite the new owner's offset. The redelivery this
+  causes is absorbed by `Claim`. `OnPartitionsLost` drops pending offsets
+  without committing.
+- A record interrupted by **shutdown** is not marked done. Its job may still
+  be `queued` (e.g. `Claim` never ran) with no other message pointing at it;
+  leaving the offset uncommitted gets it redelivered.
+- Known gap: because the commit point is the *highest* finished offset, a
+  record whose handling failed transiently (e.g. `Claim` hit a DB error) is
+  committed past by the next record. Its job stays `queued` without a message
+  until the reconcile loop learns to republish stale queued jobs (see §7,
+  retention).
+
 ### D-10. One runner per worker process
 
 `SIMFLEET_RUNNER=crossing` at startup. The worker builds exactly one implementation.
