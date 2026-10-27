@@ -110,8 +110,49 @@ func (p *Postgres) MarkFailed(ctx context.Context, jobID core.JobID, attempt int
 	return p.finishWith(ctx, jobID, attempt, "failed", cause)
 }
 
+// ReleaseForRetry requeues a job after a failed attempt and writes a fresh
+// outbox row for it in the same transaction, for the same reason as
+// ReclaimExpired: the message that delivered this attempt is already consumed.
 func (p *Postgres) ReleaseForRetry(ctx context.Context, jobID core.JobID, attempt int, cause string) error {
-	return p.finishWith(ctx, jobID, attempt, "queued", cause)
+	const q = `
+		WITH released AS (
+			UPDATE jobs
+			   SET state = 'queued', lease_until = NULL, worker_id = NULL,
+			       last_error = $3, updated_at = now()
+			 WHERE id = $1 AND attempt = $2 AND state = 'running'
+			RETURNING experiment_id, idx
+		)
+		SELECT r.experiment_id, r.idx, e.runner
+		  FROM released r
+		  JOIN experiments e ON e.id = r.experiment_id`
+
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var (
+		expID  uuid.UUID
+		idx    int
+		runner string
+	)
+	err = tx.QueryRow(ctx, q, uuid.UUID(jobID), attempt, cause).Scan(&expID, &idx, &runner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrFenced
+	}
+	if err != nil {
+		return fmt.Errorf("release job %s: %w", jobID, err)
+	}
+
+	row, err := outboxValues(jobID, core.ExperimentID(expID), runner, idx)
+	if err != nil {
+		return err
+	}
+	if err := enqueue(ctx, tx, [][]any{row}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (p *Postgres) finishWith(ctx context.Context, jobID core.JobID,

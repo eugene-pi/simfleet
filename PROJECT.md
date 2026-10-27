@@ -136,6 +136,14 @@ The transaction stays open across the Kafka send because the `FOR UPDATE` lock
 only exists inside it — closing early would let a second controller instance
 publish the same rows.
 
+**Every transition back to `queued` writes a new outbox row**, in the same
+transaction: `CreateExperiment`, `ReclaimExpired` and `ReleaseForRetry` all go
+through `store.outboxValues` + `store.enqueue`. With Kafka as the only delivery
+path, a requeued job whose original message was already consumed would
+otherwise never run again and its experiment would never finish. A fenced
+requeue matches zero rows and enqueues nothing; any duplicate message that
+does slip through is absorbed by `Claim`.
+
 ### D-5. Controller is a reconciliation loop, not an event handler
 
 The controller periodically compares desired state with actual state and fixes
@@ -143,7 +151,8 @@ the difference. It does not depend on events arriving.
 
 Reconcile pass, **in this order** (order prevents races, no locking needed):
 
-1. Reclaim expired leases (`state='running' AND lease_until < now() AND attempt < max`)
+1. Reclaim expired leases (`state='running' AND lease_until < now() AND attempt < max`),
+   republishing each through the outbox (see D-4)
 2. Fail exhausted jobs (`attempt >= max`) — without this they sit in `running` forever
 3. Score new results
 4. Finalize experiments with no `queued`/`running` jobs left

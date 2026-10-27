@@ -2,11 +2,42 @@ package store
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"time"
 
+	"github.com/eugene-pi/simfleet/internal/core"
 	"github.com/jackc/pgx/v5"
 )
+
+// outboxValues builds the outbox row for one job. Every path that makes a job
+// runnable — submit and every requeue — goes through here, so the message
+// format has a single definition.
+func outboxValues(jobID core.JobID, expID core.ExperimentID, runner string, idx int) ([]any, error) {
+	payload, err := json.Marshal(core.JobMessage{
+		JobID:        jobID,
+		ExperimentID: expID,
+		Runner:       runner,
+		Idx:          idx,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal outbox payload: %w", err)
+	}
+	return []any{runner, jobID.String(), payload}, nil
+}
+
+// enqueue writes outbox rows inside the caller's transaction, so the message
+// commits or rolls back together with the job state change that needs it.
+func enqueue(ctx context.Context, tx pgx.Tx, rows [][]any) error {
+	if _, err := tx.CopyFrom(ctx,
+		pgx.Identifier{"outbox"},
+		[]string{"runner", "msg_key", "payload"},
+		pgx.CopyFromRows(rows),
+	); err != nil {
+		return fmt.Errorf("copy outbox: %w", err)
+	}
+	return nil
+}
 
 // OutboxRow is a message waiting to be sent. Runner says what kind of job it
 // is; mapping that to a broker destination is the bus's job, not the store's.

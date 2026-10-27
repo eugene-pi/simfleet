@@ -80,24 +80,12 @@ func (p *Postgres) CreateExperiment(ctx context.Context, exp NewExperiment) erro
 	// This is what makes the hand-off to Kafka safe without a distributed transaction.
 	obRows := make([][]any, len(exp.Jobs))
 	for i, j := range exp.Jobs {
-		payload, err := json.Marshal(core.JobMessage{
-			JobID:        j.ID,
-			ExperimentID: exp.ID,
-			Runner:       exp.Spec.Runner,
-			Idx:          j.Idx,
-		})
-		if err != nil {
-			return fmt.Errorf("marshal outbox payload: %w", err)
+		if obRows[i], err = outboxValues(j.ID, exp.ID, exp.Runner, j.Idx); err != nil {
+			return err
 		}
-		obRows[i] = []any{exp.Runner, j.ID.String(), payload}
 	}
-
-	if _, err := tx.CopyFrom(ctx,
-		pgx.Identifier{"outbox"},
-		[]string{"runner", "msg_key", "payload"},
-		pgx.CopyFromRows(obRows),
-	); err != nil {
-		return fmt.Errorf("copy outbox: %w", err)
+	if err := enqueue(ctx, tx, obRows); err != nil {
+		return err
 	}
 
 	return tx.Commit(ctx)
