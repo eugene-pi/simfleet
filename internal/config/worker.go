@@ -31,13 +31,16 @@ func LoadWorkerConfig() WorkerConfig {
 	lds := loadInt(ENV_SIMFLEET_LEASE_DURATION, lease_duration_sec_default)
 	batchSize := loadInt(ENV_SIMFLEET_BATCH_SIZE, batch_size_default)
 	worker_stays := loadInt(ENV_SIMFLEET_WORKER_STAYS, -1)
+	lease := time.Second * time.Duration(lds)
 	return WorkerConfig{
 		DatabaseURL:   loadString(ENV_DATABASE_URL, ""),
 		Runner:        loadString(ENV_SIMFLEET_RUNNER, ""),
 		WorkerId:      loadId(),
-		LeaseDuration: time.Second * time.Duration(lds),
-		RenewEvery:    time.Second * time.Duration(lds/renew_lease_coef),
-		BatchSize:     batchSize,
-		ExitWhenIdle:  worker_stays <= 0,
+		LeaseDuration: lease,
+		// Divide the Duration, not the seconds: 1s/3 must not round down to 0,
+		// which would make time.NewTicker panic.
+		RenewEvery:   lease / lease_renew_divisor,
+		BatchSize:    batchSize,
+		ExitWhenIdle: worker_stays <= 0,
 	}
 }

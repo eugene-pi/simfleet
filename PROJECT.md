@@ -113,8 +113,29 @@ wants, detect dead workers). They are *not* a correctness mechanism: clocks
 drift and GC pauses happen, so time-based schemes never guarantee anything in a
 distributed system. The guard at the write point does.
 
-Lease renewal runs on a ticker at `leaseDuration/3`, so one missed renewal (a
-network hiccup) does not lose the lease.
+Lease renewal runs on a ticker at `leaseDuration/3` and extends the lease by a
+full `leaseDuration`, so one missed renewal (a network hiccup) does not lose
+the lease. Only a definite loss (`ErrLeaseLost`, the conditional UPDATE matched
+nothing) cancels the run; any other renewal error is logged and retried on the
+next tick.
+
+**Failure policy.** A failed attempt goes through `job.OnFailure`: transient
+errors return the job to the queue while `attempt < MaxAttempts`, then fail it.
+A runner marks errors that retrying cannot fix by wrapping
+`runner.ErrPermanent` (e.g. bad params); those — and a runner mismatch — fail
+the job on the first attempt instead of burning the rest.
+
+**Shutdown.** Once a job is claimed, every exit path leaves it in a definite
+state, even after SIGTERM: state writes after the run use a context detached
+from shutdown (`context.WithoutCancel`) and bounded by `writeTimeout` (10 s,
+must stay inside `terminationGracePeriodSeconds`). A run interrupted by
+shutdown is handed back with `ReleaseForRetry("worker shutdown")` — not run
+through the failure policy, and republished through the outbox — so another
+worker takes it immediately instead of after lease expiry. A run that finished
+just as shutdown began still saves its result. The attempt counter is not
+rolled back: it is the fencing token and must only grow, so a shutdown costs
+one attempt. Draining (finish the current job before exiting) is still to do;
+today the runner is cancelled at once.
 
 ### D-4. Transactional outbox for the Postgres → Kafka hand-off
 
@@ -425,19 +446,64 @@ func Build(name string, env Environment) (Runner, error)   // worker only
       makes `context.WithTimeout` return an already-expired context, and every
       job cancels instantly). `NewExecutor` returns an error; the worker builds
       the executor before joining the consumer group, so it fails fast.
-- [ ] Runner mismatch (`task.Runner != desc.Name`) should `MarkFailed` the job,
-      not just return an error — otherwise it sits in `running` until the lease
-      expires and burns all attempts
+- [x] Runner mismatch (`task.Runner != desc.Name`) marks the job failed at once
+      (`runner.ErrPermanent`) instead of leaving it in `running` until the lease
+      expires and burning all attempts
 
 ### Other loose ends
 
 - `runlocal` does not run migrations; `controller`/`worker` do not check schema
   version. Plan: `runlocal` migrates (it is a dev harness, single instance);
   services check the version and refuse to start with a clear message.
-- `store.NextQueued` is dead code now that Kafka delivers job ids.
+- `store.NextQueued` / `NextQueuedForExperiment` are obsolete now that Kafka
+  delivers job ids, but still used by `runlocal`'s legacy DB-polling modes
+  (`work`, `runSingle`, `spawnOld`). Delete those modes and the queries
+  together.
 - `HasActiveExperiments` moved from worker to `runlocal`, which decides when
   everything is done and sends SIGTERM. Workers never decide this — in
   Kubernetes they must outlive any single experiment.
+
+### Review findings (not yet fixed)
+
+Found in an architecture review on 2026-10-26. The core design (fencing,
+outbox, idempotent reconcile, metrics vs scores, deterministic seeds) holds
+up; these are the places where code, docs and tooling disagree.
+
+**Docs vs code**
+
+| This document says | Reality |
+|---|---|
+| `cmd/simfleet` submits experiments (§2, §4) | Does not exist. Submit is `runlocal submit`. The root `main.go` prints "Hello from WSL", and a 2.3 MB Linux binary `simfleet` is committed at the repo root. |
+| `./bin/runlocal spawn 5` starts controller + 5 workers (§4) | `spawn` takes a spec path, not a count; 5 is hardcoded (`cmd/runlocal/main.go:79`), and it starts **workers only**, no controller. |
+| `make test-integration` with `-tags=integration` (§4) | No such target, and no test file has a `//go:build integration` tag, so `make test` starts testcontainers. `make run-api` points at a nonexistent `cmd/api`. |
+| `TestScoringPipeline` proves scoring, idempotency and rescoring (§4) | Broken. Step 1 calls `PublishOutbox` instead of `Reconcile` (`controller_test.go:47`), so the result map is empty and the zone loop passes vacuously; the "second pass" check then fails because that is the first scoring pass. Step 3 (threshold change → rescore) has no assertion. Fails on clean HEAD too. |
+| `job_results.worker_id` is attribution (D-12) | Column exists (migration 002) but `SaveResult` never writes it; `ResultRecord` has no worker id. |
+| Publish loop ticks every 500 ms (D-5) | `controller.go:78` uses 50 ms (comment still says 500ms). |
+
+**Bugs**
+
+- `cmd/runlocal/main.go:40`: `slog.Any("error", err)` builds an attribute and
+  discards it — every `runlocal` error is silent and the exit code is 0.
+- `internal/bus/kafka.go`: the error from `ensureTopic` is ignored (`:33`), and
+  `if cl == nil` after `kgo.NewClient` (`:26`) should be `if err != nil`.
+- `internal/core/param.go` `UnmarshalJSON`: Go `case`s do not fall through, so
+  the empty `case int:` / `int64` / `uint` branches leave the value as
+  `KindInvalid`. Harmless today (JSON decodes numbers as `float64`), misleading.
+- A record whose handling fails transiently is committed past by the next
+  record — see the known gap in D-9. Fix together with the §7 retention item:
+  reconcile republishes jobs `queued` for too long.
+
+**Cleanup**
+
+- `internal/execution/executor.go:81`: the crash-test code (`WorkerId == "w1"`
+  → `os.Exit(137)`) lives in production code. Move it behind a build tag or an
+  env var.
+- `cmd/worker/main.go:24-25` calls `envfile.LoadEnv()` and `core.SetupLogger()`
+  again; `core.RunService` already does both.
+- `Execute` returns `claimed=true` for a failed run, so the worker logs it as
+  "job done". Return the outcome explicitly (done / retried / failed / skipped).
+- Shutdown cancels the runner immediately; draining (finish the current job
+  within `drainTimeout`) is still to do — see D-3 and the Kubernetes roadmap.
 
 ---
 

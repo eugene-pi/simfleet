@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/eugene-pi/simfleet/internal/core"
+	"github.com/eugene-pi/simfleet/internal/runner"
 )
 
 const (
@@ -29,7 +30,8 @@ func (c *Crossing) Run(ctx context.Context, t core.Task) (core.Result, error) {
 	start := time.Now()
 	p, err := parseParams(t.Params)
 	if err != nil {
-		return core.Result{}, fmt.Errorf("params: %w", err)
+		// Same params give the same error on every attempt: don't retry.
+		return core.Result{}, fmt.Errorf("%w: params: %w", runner.ErrPermanent, err)
 	}
 
 	rng := rand.New(rand.NewPCG(uint64(t.Seed), 0))

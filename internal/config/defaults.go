@@ -15,6 +15,10 @@ const batch_size_default int = 50
 const lease_duration_sec_default int = 10
 const renew_lease_coef int = 2
 
+// Workers renew their lease every LeaseDuration/3, so one missed renewal
+// (a network hiccup) still leaves a full period before the lease expires.
+const lease_renew_divisor = 3
+
 const kafka_broker_default string = "localhost:9092"
 const kafka_group_default string = "simfleet-workers"
 const kafka_topic_default string = "sim.jobs"
