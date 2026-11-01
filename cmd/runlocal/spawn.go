@@ -58,7 +58,7 @@ func spawn(ctx context.Context, bin string, runner string, n int) ([]*exec.Cmd, 
 	cmds := make([]*exec.Cmd, 0, n)
 	for i := range n {
 		cmd := exec.CommandContext(ctx, path)
-		cmd.Env = append(os.Environ(), fmt.Sprintf("%s=w%d", config.ENV_WORKER_ID, i+1), config.ENV_SIMFLEET_RUNNER+"="+runner)
+		cmd.Env = append(os.Environ(), fmt.Sprintf("%s=w%d", config.ENV_WORKER_ID, i+1), config.ENV_SIMFLEET_RUNNER+"="+runner, fmt.Sprintf("%s=:%d", config.ENV_METRICS_ADDR, 9101+i))
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 

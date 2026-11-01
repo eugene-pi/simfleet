@@ -10,6 +10,7 @@ import (
 
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
+	"github.com/eugene-pi/simfleet/internal/metrics"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -122,6 +123,7 @@ func (c *KafkaConsumer) Poll(ctx context.Context) (core.Batch, error) {
 			Value:     r.Value,
 		})
 	}
+	metrics.RecordsConsumed.Add(float64(len(out.Records)))
 	return out, nil
 }
 
@@ -145,6 +147,7 @@ func (c *KafkaConsumer) onAssigned(_ context.Context, _ *kgo.Client, assigned ma
 	for _, p := range assigned[c.topic] {
 		c.owned[p] = true
 	}
+	metrics.PartitionsOwned.Add(float64(len(assigned)))
 }
 
 // onRevoked commits what is finished before partitions move to another
@@ -152,6 +155,7 @@ func (c *KafkaConsumer) onAssigned(_ context.Context, _ *kgo.Client, assigned ma
 func (c *KafkaConsumer) onRevoked(ctx context.Context, _ *kgo.Client, revoked map[string][]int32) {
 	c.flush(ctx)
 	c.disown(revoked[c.topic])
+	metrics.PartitionsOwned.Sub(float64(len(revoked)))
 }
 
 // onLost drops tracked offsets without committing: the partitions already

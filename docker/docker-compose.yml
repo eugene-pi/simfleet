@@ -49,3 +49,24 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     depends_on: [kafka]
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9200:9090"]
+    volumes:
+      - ./storage/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=24h
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ADMIN_PASSWORD: dev
+    volumes:
+      - ./storage/grafana-datasource.yml:/etc/grafana/provisioning/datasources/ds.yml:ro
+    depends_on: [prometheus]
+      

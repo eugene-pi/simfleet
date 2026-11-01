@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/eugene-pi/simfleet/internal/config"
+	"github.com/eugene-pi/simfleet/internal/metrics"
 	"github.com/eugene-pi/simfleet/internal/store"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -73,6 +74,7 @@ func (k *Kafka) PublishBatch(ctx context.Context, rows []store.OutboxRow) error 
 			Value: r.Payload,
 		}
 	}
+	metrics.Published.Add(float64(len(rows)))
 	// ProduceSync waits for all records: we must not mark them published
 	// before the broker has acknowledged them.
 	return k.cl.ProduceSync(ctx, recs...).FirstErr()

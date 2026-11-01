@@ -6,17 +6,20 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/eugene-pi/simfleet/internal/app"
 	"github.com/eugene-pi/simfleet/internal/blob"
 	"github.com/eugene-pi/simfleet/internal/bus"
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
 	"github.com/eugene-pi/simfleet/internal/envfile"
 	"github.com/eugene-pi/simfleet/internal/execution"
+	"github.com/eugene-pi/simfleet/internal/metrics"
 	"github.com/eugene-pi/simfleet/internal/runner"
 	_ "github.com/eugene-pi/simfleet/internal/runner/crossing"
 	_ "github.com/eugene-pi/simfleet/internal/runner/slowcrossing"
 	"github.com/eugene-pi/simfleet/internal/store"
 	"github.com/eugene-pi/simfleet/internal/worker"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -42,6 +45,7 @@ func main() {
 		if err != nil {
 			return err
 		}
+		InitRunner(cfg.Runner)
 		exec, err := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, cfg)
 		if err != nil {
 			return err
@@ -52,6 +56,18 @@ func main() {
 		}
 		defer cons.Close()
 
-		return worker.New(cons, exec, cfg).Run(ctx)
+		w := worker.New(cons, exec, cfg)
+		g, ctx := errgroup.WithContext(ctx)
+		g.Go(app.StartHTTP(ctx, cfg.MetricsAddr, st))
+		g.Go(func() error { return w.Run(ctx) })
+		return g.Wait()
 	})
+}
+
+// Pre-create series for every known label combination, so a metric that has
+// not fired yet reports 0 instead of being absent.
+func InitRunner(name string) {
+	for _, o := range []string{metrics.OutcomeSuccess, metrics.OutcomeFailed, metrics.OutcomeRetried, metrics.OutcomeSkipped} {
+		metrics.JobsTotal.WithLabelValues(name, o)
+	}
 }

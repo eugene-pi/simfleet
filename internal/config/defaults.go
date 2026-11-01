@@ -10,6 +10,7 @@ const ENV_KAFKA_BROKERS string = "KAFKA_BROKERS"
 const ENV_KAFKA_GROUP string = "KAFKA_GROUP"
 const ENV_KAFKA_TOPIC string = "KAFKA_TOPIC"
 const ENV_KAFKA_PARTITIONS string = "KAFKA_PARTITIONS"
+const ENV_METRICS_ADDR string = "METRICS_ADDR"
 
 const batch_size_default int = 50
 const lease_duration_sec_default int = 10
@@ -23,3 +24,5 @@ const kafka_broker_default string = "localhost:9092"
 const kafka_group_default string = "simfleet-workers"
 const kafka_topic_default string = "sim.jobs"
 const kafka_partitions_default int = 12
+
+const metrics_addr_default string = ":9100"

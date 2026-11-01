@@ -283,3 +283,37 @@ func (p *Postgres) Summary(ctx context.Context, expID core.ExperimentID) (Summar
 	}
 	return s, rows.Err()
 }
+
+func (p *Postgres) ActiveJobsByState(ctx context.Context) (map[string]int, error) {
+	res := make(map[string]int)
+	const q = `
+		SELECT j.state, count(*) FROM jobs j
+  			JOIN experiments e ON e.id = j.experiment_id
+ 		WHERE e.state = 'running' AND j.state IN ('queued', 'running') GROUP BY j.state`
+
+	rows, err := p.pool.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var state string
+		var n int
+		if err := rows.Scan(&state, &n); err != nil {
+			return nil, err
+		}
+		res[state] = n
+	}
+	return res, nil
+}
+
+// OutboxPending counts rows waiting to be published. Sustained growth is the
+// clearest single signal that the controller is down or not keeping up:
+// jobs exist in Postgres but no worker will ever hear about them.
+func (p *Postgres) OutboxPending(ctx context.Context) (int, error) {
+	const q = `SELECT count(*) FROM outbox WHERE published_at IS NULL`
+	var n int
+	err := p.pool.QueryRow(ctx, q).Scan(&n)
+	return n, err
+}

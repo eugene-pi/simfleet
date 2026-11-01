@@ -13,6 +13,7 @@ type ControllerConfig struct {
 	Interval      time.Duration // reconciliation period
 	ReclaimBatch  int           // max number of leases revoked during 1 rec. period
 	LeaseDuration time.Duration // depends on Claim duration
+	MetricsAddr   string        // where /metrics, /healthz and /readyz are served
 }
 
 func LoadControllerConfig() (ControllerConfig, error) {
@@ -20,6 +21,7 @@ func LoadControllerConfig() (ControllerConfig, error) {
 		Interval:      time.Duration(lease_duration_sec_default/renew_lease_coef) * time.Second,
 		ReclaimBatch:  batch_size_default,
 		LeaseDuration: time.Duration(lease_duration_sec_default) * time.Second,
+		MetricsAddr:   loadString(ENV_METRICS_ADDR, metrics_addr_default),
 	}
 	c.DatabaseURL = os.Getenv(ENV_DATABASE_URL)
 	if c.DatabaseURL == "" {

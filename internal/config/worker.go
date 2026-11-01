@@ -14,6 +14,7 @@ type WorkerConfig struct {
 	RenewEvery    time.Duration
 	BatchSize     int
 	ExitWhenIdle  bool
+	MetricsAddr   string
 }
 
 func loadId() string {
@@ -42,5 +43,6 @@ func LoadWorkerConfig() WorkerConfig {
 		RenewEvery:   lease / lease_renew_divisor,
 		BatchSize:    batchSize,
 		ExitWhenIdle: worker_stays <= 0,
+		MetricsAddr:  loadString(ENV_METRICS_ADDR, metrics_addr_default),
 	}
 }

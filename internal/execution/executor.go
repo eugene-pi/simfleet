@@ -13,6 +13,7 @@ import (
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
 	"github.com/eugene-pi/simfleet/internal/job"
+	"github.com/eugene-pi/simfleet/internal/metrics"
 	"github.com/eugene-pi/simfleet/internal/runner"
 	"github.com/eugene-pi/simfleet/internal/store"
 )
@@ -91,8 +92,12 @@ func (e *Executor) Execute(ctx context.Context, jobID core.JobID) (bool, error) 
 
 	go e.keepLease(runCtx, cancel, jobID, attempt)
 
+	start := time.Now()
 	res, err := e.r.Run(runCtx, task)
+	metrics.JobDuration.WithLabelValues(e.desc.Name).Observe(time.Since(start).Seconds())
+
 	if err != nil {
+		metrics.JobsTotal.WithLabelValues(e.desc.Name, metrics.OutcomeRetried).Inc()
 		return true, e.giveBack(ctx, jobID, attempt, err)
 	}
 	// Saved even if shutdown began after the run finished: the work is done.

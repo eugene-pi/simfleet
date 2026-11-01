@@ -41,3 +41,7 @@ func NewPostgresStore(ctx context.Context, dsn string) (*Postgres, error) {
 func (s *Postgres) Close() {
 	s.pool.Close()
 }
+
+func (p *Postgres) Ping(ctx context.Context) error {
+	return p.pool.Ping(ctx)
+}
