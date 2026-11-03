@@ -71,5 +71,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: dev
     volumes:
       - ./storage/grafana-datasource.yml:/etc/grafana/provisioning/datasources/ds.yml:ro
+      - ./storage/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/simfleet.yml:ro
+      - ./storage/grafana/dashboards:/var/lib/grafana/dashboards/simfleet:ro
     depends_on: [prometheus]
       

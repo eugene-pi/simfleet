@@ -543,7 +543,12 @@ Do this first — without it, debugging inside a cluster is blind.
 Not needed: tracing, alerting, custom storage.
 
 Done: all of these metrics, declared in `internal/metrics`, served on
-`METRICS_ADDR` (controller `:9100`, worker `:9101`). Still to do: the dashboard.
+`METRICS_ADDR` (controller `:9100`, worker `:9101`), and two dashboards in
+`docker/storage/grafana/dashboards/` (`simfleet / Controller`,
+`simfleet / Workers`), provisioned by docker-compose into the `simfleet` folder.
+They pick the data source through a variable and the scrape job through a
+textbox, so they import into any Grafana unchanged. Grafana does not save UI
+edits back to the files: export the dashboard and replace the JSON.
 
 Reading them:
 

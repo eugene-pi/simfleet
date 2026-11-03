@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: simfleet
+    folder: simfleet
+    type: file
+    # UI edits are allowed but not saved back to the JSON: export the dashboard
+    # and replace the file to keep a change.
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/simfleet
