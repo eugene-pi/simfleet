@@ -284,8 +284,11 @@ func (p *Postgres) Summary(ctx context.Context, expID core.ExperimentID) (Summar
 	return s, rows.Err()
 }
 
+// ActiveJobsByState counts unfinished jobs of running experiments. Both states
+// are always present: GROUP BY returns nothing for a state with no rows, and a
+// missing state would read as "no data" rather than 0.
 func (p *Postgres) ActiveJobsByState(ctx context.Context) (map[string]int, error) {
-	res := make(map[string]int)
+	res := map[string]int{"queued": 0, "running": 0}
 	const q = `
 		SELECT j.state, count(*) FROM jobs j
   			JOIN experiments e ON e.id = j.experiment_id
@@ -305,14 +308,21 @@ func (p *Postgres) ActiveJobsByState(ctx context.Context) (map[string]int, error
 		}
 		res[state] = n
 	}
-	return res, nil
+	return res, rows.Err()
 }
 
-// OutboxPending counts rows waiting to be published. Sustained growth is the
-// clearest single signal that the controller is down or not keeping up:
-// jobs exist in Postgres but no worker will ever hear about them.
+// OutboxPending counts rows waiting to be published. Sustained growth means
+// the controller is not keeping up: jobs exist in Postgres but no worker has
+// heard about them.
 func (p *Postgres) OutboxPending(ctx context.Context) (int, error) {
 	const q = `SELECT count(*) FROM outbox WHERE published_at IS NULL`
+	var n int
+	err := p.pool.QueryRow(ctx, q).Scan(&n)
+	return n, err
+}
+
+func (p *Postgres) ActiveExperiments(ctx context.Context) (int, error) {
+	const q = `SELECT count(*) FROM experiments WHERE state = 'running'`
 	var n int
 	err := p.pool.QueryRow(ctx, q).Scan(&n)
 	return n, err

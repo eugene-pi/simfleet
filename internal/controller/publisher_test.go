@@ -10,7 +10,9 @@ import (
 
 	"github.com/eugene-pi/simfleet/internal/controller"
 	"github.com/eugene-pi/simfleet/internal/dbtest"
+	"github.com/eugene-pi/simfleet/internal/metrics"
 	"github.com/eugene-pi/simfleet/internal/store"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // fakePublisher records what was sent and can be told to fail, so tests can
@@ -51,11 +53,15 @@ func TestPublishFailureKeepsRowsPending(t *testing.T) {
 	c := controller.New(st, pub, time.Millisecond*10, 100)
 
 	_ = dbtest.SeedExperimentWithJobs(t, pool, 3)
+	counted := testutil.ToFloat64(metrics.Published)
 
 	// Pass fails; nothing is marked as published.
 	published, err := c.PublishOutbox(ctx)
 	if err == nil {
 		t.Fatal("want error from reconcile")
+	}
+	if got := testutil.ToFloat64(metrics.Published) - counted; got != 0 {
+		t.Errorf("failed publish counted %v rows, want 0", got)
 	}
 	if n := dbtest.CountUnpublished(t, pool); n != 3 {
 		t.Errorf("unpublished = %d, want 3", n)
@@ -79,5 +85,7 @@ func TestPublishFailureKeepsRowsPending(t *testing.T) {
 	if published != 3 {
 		t.Errorf("expected 3 would be published, got %d", published)
 	}
-
+	if got := testutil.ToFloat64(metrics.Published) - counted; got != 3 {
+		t.Errorf("published counter rose by %v, want 3", got)
+	}
 }

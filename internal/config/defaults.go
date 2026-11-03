@@ -25,4 +25,7 @@ const kafka_group_default string = "simfleet-workers"
 const kafka_topic_default string = "sim.jobs"
 const kafka_partitions_default int = 12
 
-const metrics_addr_default string = ":9100"
+// Different ports, so a controller and a worker started by hand on one machine
+// do not fight over the address: a taken port stops the process.
+const controller_metrics_addr_default string = ":9100"
+const worker_metrics_addr_default string = ":9101"

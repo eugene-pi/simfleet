@@ -341,7 +341,8 @@ internal/
 ├── bus/           Kafka producer and consumer group adapter
 ├── blob/          LocalFS (S3 not yet)
 ├── config/        Env-based config per command
-├── app/           Shared command scaffold: logging, signals, exit code
+├── app/           Observability HTTP server: /metrics, /healthz, /readyz
+├── metrics/       Prometheus metrics and the scrape-time collectors
 └── dbtest/        Integration test helpers (tag: integration)
 ```
 
@@ -505,6 +506,24 @@ up; these are the places where code, docs and tooling disagree.
 - Shutdown cancels the runner immediately; draining (finish the current job
   within `drainTimeout`) is still to do — see D-3 and the Kubernetes roadmap.
 
+**Found while verifying the metrics on 2026-11-01** (measured on a real run of
+`examples/crossing.yaml`: 3,510 jobs, three workers, not fixed)
+
+- **Publishing has no time limit.** With the broker unreachable, `ProduceSync`
+  blocks with the outbox transaction open: an idle transaction was seen 99 s
+  old, and `simfleet_loop_errors_total{loop="publish"}` stayed at 0. The rows do
+  go out once the broker returns. `simfleet_outbox_pending` is the only signal
+  until the send is bounded (`kgo.RecordDeliveryTimeout` plus a per-pass
+  timeout).
+- **Experiments complete before they are scored.** `scoreResults` handles one
+  batch per pass: 50 rows per 5 s, 10 rows/s, against about 220 jobs/s from two
+  workers. Soon after the experiment went `completed`, 2,610 of its 3,510 results
+  had no score. `FinalizeCompleted` looks only at job state. No metric shows the
+  backlog yet.
+- **`job_results.scoring_error` is never written.** A result that fails
+  `scoring.Evaluate` is retried on every pass, and 50 of them at the head of the
+  queue (`ORDER BY created_at LIMIT batch`) would block all scoring.
+
 ---
 
 ## 6. Roadmap
@@ -522,6 +541,25 @@ counter (a spike means leases are shorter than real job duration).
 Do this first — without it, debugging inside a cluster is blind.
 
 Not needed: tracing, alerting, custom storage.
+
+Done: all of these metrics, declared in `internal/metrics`, served on
+`METRICS_ADDR` (controller `:9100`, worker `:9101`). Still to do: the dashboard.
+
+Reading them:
+
+- Counters die with the process. A crashed worker's unscraped increments are
+  gone (82 of 3,510 successes in the test run), so use counters for rates and
+  `simfleet_jobs_active` or Postgres for totals.
+- `simfleet_outbox_pending`, `simfleet_jobs_active` and
+  `simfleet_experiments_active` are served by every controller instance: use
+  `max()`, not `sum()`. A dead controller shows as `up == 0`, not as a growing
+  outbox.
+- `simfleet_consumer_lag` needs a consumer group: it has no series before the
+  first worker joins, and an empty group reports only partitions it has
+  committed on. For the backlog with no workers running, read
+  `simfleet_jobs_active{state="queued"}`.
+- A failed scrape-time query leaves its series out (never 0) and increments
+  `simfleet_loop_errors_total{loop="collect"}`.
 
 ### Then: Kubernetes locally (2–3 evenings)
 

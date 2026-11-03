@@ -34,6 +34,10 @@ type fakeStore struct {
 	renewErrs []error
 	renewLD   []time.Duration
 	releaseFn func() error // optional override for ReleaseForRetry
+	claimErr  error
+	loadErr   error
+	saveErr   error
+	markErr   error
 	calls     []call
 }
 
@@ -50,16 +54,16 @@ func (f *fakeStore) writes() []call {
 }
 
 func (f *fakeStore) Claim(ctx context.Context, _ core.JobID, _ string, _ time.Duration) (int, error) {
-	return f.attempt, nil
+	return f.attempt, f.claimErr
 }
 
 func (f *fakeStore) LoadTask(ctx context.Context, id core.JobID) (core.Task, error) {
-	return core.Task{JobID: id, Runner: f.runner}, nil
+	return core.Task{JobID: id, Runner: f.runner}, f.loadErr
 }
 
 func (f *fakeStore) SaveResult(ctx context.Context, r store.ResultRecord) error {
 	f.record(ctx, "SaveResult", r.Attempt, "")
-	return nil
+	return f.saveErr
 }
 
 func (f *fakeStore) ReleaseForRetry(ctx context.Context, _ core.JobID, attempt int, cause string) error {
@@ -72,7 +76,7 @@ func (f *fakeStore) ReleaseForRetry(ctx context.Context, _ core.JobID, attempt i
 
 func (f *fakeStore) MarkFailed(ctx context.Context, _ core.JobID, attempt int, cause string) error {
 	f.record(ctx, "MarkFailed", attempt, cause)
-	return nil
+	return f.markErr
 }
 
 func (f *fakeStore) RenewLease(ctx context.Context, _ core.JobID, _ int, ld time.Duration) error {

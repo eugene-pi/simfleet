@@ -45,7 +45,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		InitRunner(cfg.Runner)
+		metrics.InitRunner(cfg.Runner)
 		exec, err := execution.NewExecutor(st, blob.NewLocalFS("./out"), desc, r, cfg)
 		if err != nil {
 			return err
@@ -62,12 +62,4 @@ func main() {
 		g.Go(func() error { return w.Run(ctx) })
 		return g.Wait()
 	})
-}
-
-// Pre-create series for every known label combination, so a metric that has
-// not fired yet reports 0 instead of being absent.
-func InitRunner(name string) {
-	for _, o := range []string{metrics.OutcomeSuccess, metrics.OutcomeFailed, metrics.OutcomeRetried, metrics.OutcomeSkipped} {
-		metrics.JobsTotal.WithLabelValues(name, o)
-	}
 }

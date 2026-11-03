@@ -32,7 +32,7 @@ func main() {
 		}
 		defer bus.Close()
 
-		prometheus.MustRegister(metrics.NewDBCollector(store))
+		prometheus.MustRegister(metrics.NewDBCollector(store), metrics.NewLagCollector(bus))
 
 		cont := controller.New(store, bus, cfg.Interval, cfg.ReclaimBatch)
 

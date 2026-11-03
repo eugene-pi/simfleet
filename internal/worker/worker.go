@@ -8,6 +8,7 @@ import (
 
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
+	"github.com/eugene-pi/simfleet/internal/metrics"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -109,6 +110,7 @@ func (w *Worker) processLoop(ctx context.Context, in <-chan core.Record) error {
 func (w *Worker) handle(ctx context.Context, rec core.Record) (bool, error) {
 	var msg core.JobMessage
 	if err := json.Unmarshal(rec.Value, &msg); err != nil {
+		metrics.RecordsMalformed.Inc()
 		w.log.Error("malformed message, skipping",
 			"partition", rec.Partition, "offset", rec.Offset, "error", err)
 		return false, nil

@@ -147,7 +147,7 @@ func (c *KafkaConsumer) onAssigned(_ context.Context, _ *kgo.Client, assigned ma
 	for _, p := range assigned[c.topic] {
 		c.owned[p] = true
 	}
-	metrics.PartitionsOwned.Add(float64(len(assigned)))
+	metrics.PartitionsOwned.Set(float64(len(c.owned)))
 }
 
 // onRevoked commits what is finished before partitions move to another
@@ -155,7 +155,6 @@ func (c *KafkaConsumer) onAssigned(_ context.Context, _ *kgo.Client, assigned ma
 func (c *KafkaConsumer) onRevoked(ctx context.Context, _ *kgo.Client, revoked map[string][]int32) {
 	c.flush(ctx)
 	c.disown(revoked[c.topic])
-	metrics.PartitionsOwned.Sub(float64(len(revoked)))
 }
 
 // onLost drops tracked offsets without committing: the partitions already
@@ -171,6 +170,7 @@ func (c *KafkaConsumer) disown(parts []int32) {
 		delete(c.owned, p)
 		delete(c.pending, p)
 	}
+	metrics.PartitionsOwned.Set(float64(len(c.owned)))
 }
 
 // flush commits the tracked offsets synchronously. Kafka stores the offset of
@@ -210,6 +210,7 @@ func (c *KafkaConsumer) flush(ctx context.Context) {
 		return
 	}
 
+	metrics.CommitFailures.Inc()
 	slog.Error("commit offsets failed, will retry", "error", commitErr)
 	c.mtx.Lock()
 	defer c.mtx.Unlock()

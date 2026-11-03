@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -39,7 +40,8 @@ func StartHTTP(ctx context.Context, addr string, ready Ready) func() error {
 		defer cancel()
 
 		if err := ready.Ping(rctx); err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			slog.Warn("readiness check failed", "error", err)
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)

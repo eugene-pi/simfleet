@@ -53,6 +53,9 @@ services:
   prometheus:
     image: prom/prometheus:latest
     ports: ["9200:9090"]
+    # Scrape targets run on the host. Docker Desktop resolves this name on its
+    # own; plain Docker Engine on Linux needs the mapping.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./storage/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:

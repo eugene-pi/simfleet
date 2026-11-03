@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/eugene-pi/simfleet/internal/core"
+	"github.com/eugene-pi/simfleet/internal/metrics"
 	"github.com/eugene-pi/simfleet/internal/scoring"
 	"github.com/eugene-pi/simfleet/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -67,13 +68,7 @@ func (c *Controller) Run(ctx context.Context) error {
 // publishLoop moves outbox rows to the bus. It runs on a tight tick because
 // every delay here is idle worker time.
 func (c *Controller) publishLoop(ctx context.Context) {
-	published, err := c.PublishOutbox(ctx)
-	if err != nil && ctx.Err() == nil {
-		slog.Error("publish outbox", "error", err)
-	}
-	if published > 0 {
-		slog.Debug("Jobs published", "published", published)
-	}
+	c.publishOnce(ctx)
 
 	t := time.NewTicker(50 * time.Millisecond) // 500ms
 	defer t.Stop()
@@ -83,14 +78,19 @@ func (c *Controller) publishLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			published, err = c.PublishOutbox(ctx)
-			if err != nil && ctx.Err() == nil {
-				slog.Error("publish outbox", "error", err)
-			}
-			if published > 0 {
-				slog.Debug("Jobs published", "published", published)
-			}
+			c.publishOnce(ctx)
 		}
+	}
+}
+
+func (c *Controller) publishOnce(ctx context.Context) {
+	published, err := c.PublishOutbox(ctx)
+	if err != nil && ctx.Err() == nil {
+		metrics.LoopErrors.WithLabelValues(metrics.LoopPublish).Inc()
+		slog.Error("publish outbox", "error", err)
+	}
+	if published > 0 {
+		slog.Debug("Jobs published", "published", published)
 	}
 }
 
@@ -104,7 +104,11 @@ func (c *Controller) reconcileLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := c.Reconcile(ctx); err != nil && ctx.Err() == nil {
+			start := time.Now()
+			err := c.Reconcile(ctx)
+			metrics.ReconcileDuration.Observe(time.Since(start).Seconds())
+			if err != nil && ctx.Err() == nil {
+				metrics.LoopErrors.WithLabelValues(metrics.LoopReconcile).Inc()
 				slog.Error("reconcile", "error", err)
 			}
 		}
@@ -117,6 +121,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("reclaim: %w", err)
 	}
 	if len(expired) > 0 {
+		metrics.LeasesExpired.Add(float64(len(expired)))
 		slog.Info("claims expired / jobs reset", "count", len(expired))
 	}
 
@@ -125,6 +130,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("fail exhausted: %w", err)
 	}
 	if failed > 0 {
+		metrics.AttemptsExhausted.Add(float64(failed))
 		slog.Warn("no more attempts", "count", failed)
 	}
 
@@ -145,6 +151,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	if time.Since(c.lastPurge) > time.Hour {
 		n, err := c.store.PurgePublished(ctx, 24*time.Hour, 10_000)
 		if err != nil {
+			metrics.LoopErrors.WithLabelValues(metrics.LoopReconcile).Inc()
 			slog.Error("purge outbox", "error", err)
 		} else if n > 0 {
 			slog.Info("purged outbox rows", "count", n)
@@ -200,5 +207,8 @@ func (c *Controller) PublishOutbox(ctx context.Context) (int, error) {
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit: %w", err)
 	}
+	// Counted after the commit: a failed send or commit leaves the rows
+	// pending, and they would be counted again when they are retried.
+	metrics.Published.Add(float64(len(rows)))
 	return len(rows), nil
 }

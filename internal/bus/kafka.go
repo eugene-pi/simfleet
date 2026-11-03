@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/eugene-pi/simfleet/internal/config"
-	"github.com/eugene-pi/simfleet/internal/metrics"
 	"github.com/eugene-pi/simfleet/internal/store"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -74,8 +73,33 @@ func (k *Kafka) PublishBatch(ctx context.Context, rows []store.OutboxRow) error 
 			Value: r.Payload,
 		}
 	}
-	metrics.Published.Add(float64(len(rows)))
 	// ProduceSync waits for all records: we must not mark them published
 	// before the broker has acknowledged them.
 	return k.cl.ProduceSync(ctx, recs...).FirstErr()
+}
+
+// ConsumerLag reports the worker group's lag per partition. A group that does
+// not exist yet is not an error, it just has no lag to report; and with no
+// members only the partitions it has committed on are known.
+func (k *Kafka) ConsumerLag(ctx context.Context) (map[int32]int64, error) {
+	lags, err := kadm.NewClient(k.cl).Lag(ctx, k.cfg.Group)
+	if err != nil {
+		return nil, fmt.Errorf("lag: %w", err)
+	}
+	group := lags[k.cfg.Group]
+	if err := group.Error(); err != nil {
+		if errors.Is(err, kerr.GroupIDNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("lag of group %s: %w", k.cfg.Group, err)
+	}
+
+	out := make(map[int32]int64, len(group.Lag[k.cfg.Topic]))
+	for part, l := range group.Lag[k.cfg.Topic] {
+		if l.Err != nil {
+			return nil, fmt.Errorf("lag of partition %d: %w", part, l.Err)
+		}
+		out[part] = l.Lag
+	}
+	return out, nil
 }

@@ -11,6 +11,8 @@ import (
 
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
+	"github.com/eugene-pi/simfleet/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // fakeConsumer hands out one batch, then blocks until the context ends, the
@@ -89,6 +91,7 @@ func TestEveryHandledRecordIsDone(t *testing.T) {
 		record(t, 12, core.JobID(uuid.NewV7())),
 	}}
 	w := New(cons, &fakeExecutor{}, config.WorkerConfig{BatchSize: 1})
+	malformed := testutil.ToFloat64(metrics.RecordsMalformed)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error, 1)
@@ -101,6 +104,9 @@ func TestEveryHandledRecordIsDone(t *testing.T) {
 	}
 	if got := cons.reported(); !slices.Equal(got, []int64{10, 11, 12}) {
 		t.Errorf("done = %v, want [10 11 12]", got)
+	}
+	if got := testutil.ToFloat64(metrics.RecordsMalformed) - malformed; got != 1 {
+		t.Errorf("malformed rose by %v, want 1", got)
 	}
 }
 
