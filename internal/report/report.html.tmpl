@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Name}} — experiment report</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --hairline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --good: #0ca30c;
+  --warn: #fab219;
+  --crit: #d03b3b;
+  --z3: #2a78d6;
+  --z4: #8a5cd6;
+  --failed: #52514e;
+  --failed-ink: #2c2c2a;
+  --pending: #e1e0d9;
+  --alert-bg: #fdf3e1;
+  --alert-ink: #6b4a00;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --text: #f0efec;
+    --text-2: #c3c2b7;
+    --hairline: #2c2c2a;
+    --baseline: #383835;
+    --z3: #3987e5;
+    --z4: #9b72e0;
+    --failed: #8a8984;
+    --failed-ink: #5c5b57;
+    --pending: #383835;
+    --alert-bg: #3a2c0e;
+    --alert-ink: #f5d9a0;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --hairline: #2c2c2a;
+  --baseline: #383835;
+  --z3: #3987e5;
+  --z4: #9b72e0;
+  --failed: #8a8984;
+  --failed-ink: #5c5b57;
+  --pending: #383835;
+  --alert-bg: #3a2c0e;
+  --alert-ink: #f5d9a0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--surface); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 32px 0 8px; }
+h3 { font-size: 14px; margin: 20px 0 6px; font-family: ui-monospace, Consolas, monospace; }
+.sub, .muted { color: var(--text-2); }
+.mono { font-family: ui-monospace, Consolas, monospace; }
+.alert {
+  background: var(--alert-bg); color: var(--alert-ink);
+  border-radius: 8px; padding: 12px 16px; margin: 16px 0;
+}
+.alert strong { display: block; margin-bottom: 4px; }
+.alert ul { margin: 0; padding-left: 20px; }
+.ok { color: var(--text-2); margin: 16px 0; }
+.ok::before { content: "✓ "; color: var(--good); font-weight: 700; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+.tile { background: var(--surface-2); border-radius: 8px; padding: 12px 14px; }
+.tile .label { color: var(--text-2); font-size: 12px; }
+.tile .value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .hint { color: var(--text-2); font-size: 12px; }
+
+.bar { display: flex; gap: 2px; height: 28px; background: var(--surface); }
+.bar.small { height: 14px; min-width: 120px; }
+.bar > span { display: block; height: 100%; }
+.bar > span:first-child { border-radius: 4px 0 0 4px; }
+.bar > span:last-child { border-radius: 0 4px 4px 0; }
+.bar > span:only-child { border-radius: 4px; }
+.bar > span:hover { outline: 2px solid var(--text); outline-offset: 1px; }
+.seg-good { background: var(--good); }
+.seg-warn { background: var(--warn); }
+.seg-crit { background: var(--crit); }
+.seg-z3 { background: var(--z3); }
+.seg-z4 { background: var(--z4); }
+.seg-failed {
+  background: repeating-linear-gradient(45deg, var(--failed) 0 3px, var(--failed-ink) 3px 6px);
+}
+.seg-pending { background: var(--pending); }
+.seg-unfinished { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hairline); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 0; padding: 0; list-style: none; }
+.legend li { display: flex; align-items: center; gap: 6px; }
+.legend .key { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.legend .n { font-variant-numeric: tabular-nums; }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+th { color: var(--text-2); font-weight: 500; border-bottom-color: var(--baseline); }
+td.num, th.num { text-align: right; }
+td.barcell { width: 40%; min-width: 140px; }
+footer { margin-top: 40px; color: var(--text-2); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+<h1>{{.Name}}</h1>
+<div class="sub">
+  <span class="mono">{{.ID}}</span> · runner <b>{{.Runner}}</b> · state <b>{{.State}}</b>
+  · created {{ts .CreatedAt}}
+</div>
+
+{{if .Complete}}
+<p class="ok">Complete: every job finished and was scored.</p>
+{{else}}
+<div class="alert" role="alert">
+  <strong>Incomplete — these statistics do not cover the whole experiment</strong>
+  <ul>{{range .Warnings}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+
+<div class="tiles">
+  <div class="tile"><div class="label">Jobs</div><div class="value">{{.Jobs.Total}}</div><div class="hint">{{jobs .}}</div></div>
+  <div class="tile"><div class="label">Wall time</div><div class="value">{{dur .WallTime}}</div><div class="hint">submit → {{if .Finished}}completion{{else}}now{{end}}</div></div>
+  <div class="tile"><div class="label">Compute time</div><div class="value">{{run .Results.TotalDuration}}</div><div class="hint">sum of {{.Results.Count}} runs{{if .CoarseDurations}} · lower bound: runs are shorter than the 1 ms recording resolution{{end}}</div></div>
+  <div class="tile"><div class="label">Mean per job</div><div class="value">{{run .Results.MeanDuration}}</div><div class="hint">min {{run .Results.MinDuration}} · max {{run .Results.MaxDuration}}</div></div>
+</div>
+
+<h2>Outcomes of all {{.Overall.Total}} jobs</h2>
+<div class="bar" role="img" aria-label="Outcome distribution">
+  {{range nonzero .Overall}}<span class="{{class .}}" style="width: {{width .}}" title="{{.Label}}: {{.Count}} ({{pct .Share}})"></span>{{end}}
+</div>
+<ul class="legend">
+  {{range .Overall.Segments}}{{if or .Count (eq .Kind 0)}}
+  <li><span class="key {{class .}}"></span>{{.Label}} <span class="n">{{.Count}}</span> <span class="muted">{{pct .Share}}</span></li>
+  {{end}}{{end}}
+</ul>
+
+{{if or .Axes .Fixed}}
+<h2>By parameter</h2>
+<p class="muted">Most decisive first, ranked by the spread of mean score across a parameter's values.
+The breakdown is marginal: each row averages over all other parameters.</p>
+{{$r := .}}
+{{range .Axes}}
+<h3>{{.Param}} <span class="muted">· spread {{score .Spread}}</span></h3>
+<div class="scroll"><table>
+  <thead><tr>
+    <th>value</th><th class="num">jobs</th><th class="num">mean score</th>
+    {{range $r.Columns}}<th class="num">{{.Label}}</th>{{end}}
+    <th>outcomes</th>
+  </tr></thead>
+  <tbody>
+  {{range .Values}}{{$v := .}}
+    <tr>
+      <td class="mono">{{.Value}}</td>
+      <td class="num">{{.Outcomes.Total}}</td>
+      <td class="num">{{mean .MeanScore}}</td>
+      {{range $r.Columns}}<td class="num">{{share $v.Outcomes .Label}}</td>{{end}}
+      <td class="barcell"><div class="bar small">
+        {{range nonzero .Outcomes}}<span class="{{class .}}" style="width: {{width .}}" title="{{$v.Value}} → {{.Label}}: {{.Count}} ({{pct .Share}})"></span>{{end}}
+      </div></td>
+    </tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{end}}
+{{if .Fixed}}
+<p class="muted">Fixed: {{range $i, $f := .Fixed}}{{if $i}}, {{end}}<span class="mono">{{$f.Param}} = {{$f.Value}}</span>{{end}}</p>
+{{end}}
+{{end}}
+
+{{if gt .N 0}}
+{{template "cases" (dict "Title" "Worst" "Rows" .Worst "R" . "Extreme" .Results.MinScore "Ties" .Results.MinScoreTies)}}
+{{template "cases" (dict "Title" "Best" "Rows" .Best "R" . "Extreme" .Results.MaxScore "Ties" .Results.MaxScoreTies)}}
+{{end}}
+
+<footer>Generated {{ts .GeneratedAt}} by simfleet. Shares are of all jobs, so failed and unscored jobs stay visible.</footer>
+</main>
+</body>
+</html>
+
+{{define "cases"}}
+<h2>{{.Title}} {{len .Rows}} cases</h2>
+{{if not .Rows}}
+<p class="muted">None scored yet.</p>
+{{else}}
+{{if ties .Ties (len .Rows)}}<p class="muted">{{.Ties}} jobs share score {{score .Extreme}}; these are the first by index.</p>{{end}}
+{{$r := .R}}
+<div class="scroll"><table>
+  <thead><tr>
+    <th class="num">idx</th><th class="num">score</th><th>zone</th>
+    {{range $r.CaseParams}}<th class="num">{{.}}</th>{{end}}
+    {{range $r.CaseMetrics}}<th class="num">{{.}}</th>{{end}}
+    <th>note</th><th>job</th>
+  </tr></thead>
+  <tbody>
+  {{range .Rows}}{{$c := .}}
+    <tr>
+      <td class="num">{{.Idx}}</td>
+      <td class="num">{{score .Score}}</td>
+      <td>{{.Zone}}</td>
+      {{range $r.CaseParams}}<td class="num">{{param $c .}}</td>{{end}}
+      {{range $r.CaseMetrics}}<td class="num">{{metric $c .}}</td>{{end}}
+      <td>{{note .}}</td>
+      <td class="mono muted" title="{{.JobID}}">{{cut .JobID.String 8}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{end}}
+{{end}}
