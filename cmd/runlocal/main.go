@@ -10,18 +10,16 @@ import (
 	"sync"
 	"time"
 
-	"sigs.k8s.io/yaml"
-
 	"github.com/eugene-pi/simfleet/internal/blob"
 	"github.com/eugene-pi/simfleet/internal/config"
 	"github.com/eugene-pi/simfleet/internal/core"
 	"github.com/eugene-pi/simfleet/internal/envfile"
 	"github.com/eugene-pi/simfleet/internal/execution"
-	"github.com/eugene-pi/simfleet/internal/expander"
 	"github.com/eugene-pi/simfleet/internal/runner"
 	_ "github.com/eugene-pi/simfleet/internal/runner/crossing"
 	_ "github.com/eugene-pi/simfleet/internal/runner/slowcrossing"
 	"github.com/eugene-pi/simfleet/internal/store"
+	sfsubmit "github.com/eugene-pi/simfleet/internal/submit"
 )
 
 func main() {
@@ -37,7 +35,8 @@ func main() {
 		os.Exit(1)
 	}
 	if err := run(dsn); err != nil {
-		slog.Any("error", err)
+		slog.Error("runlocal failed", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -106,11 +105,7 @@ func submit(ctx context.Context, st *store.Postgres, path string) (core.Experime
 	if err != nil {
 		return core.ExperimentID{}, err
 	}
-	desc, ok := runner.Get(spec.Runner)
-	if !ok {
-		return core.ExperimentID{}, fmt.Errorf("runner %s unavailable. Enabled runners are %v", spec.Runner, runner.Names())
-	}
-	expID, n, err := expander.Create(ctx, st, desc, spec)
+	expID, n, err := sfsubmit.Submit(ctx, st, spec)
 	if err != nil {
 		return core.ExperimentID{}, err
 	}
@@ -230,13 +225,5 @@ func runSingle(ctx context.Context, st *store.Postgres, path string) error {
 }
 
 func loadSpec(path string) (core.Spec, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return core.Spec{}, fmt.Errorf("read spec: %w", err)
-	}
-	var spec core.Spec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
-		return core.Spec{}, fmt.Errorf("parse spec: %w", err)
-	}
-	return spec, nil
+	return sfsubmit.LoadSpec(path)
 }

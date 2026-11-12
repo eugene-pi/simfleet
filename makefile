@@ -8,8 +8,10 @@ export
 endif
 
 SPEC ?= examples/crossing-small.yaml
+# experiment id for "make report"; empty means the most recent one
+EXP ?=
 
-.PHONY: build test lint migrate db-up db-down run-api run-local tidy
+.PHONY: build test lint migrate db-up db-down run-api run-local tidy submit report
 
 build:
 	go build -o bin/ ./cmd/...
@@ -38,3 +40,10 @@ run-api:
 
 run-local:
 	go run ./cmd/runlocal submit $(SPEC)
+
+# submit and follow live, then print the report
+submit:
+	go run ./cmd/simfleet submit -watch $(SPEC)
+
+report:
+	go run ./cmd/simfleet report $(EXP)

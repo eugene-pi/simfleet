@@ -46,7 +46,7 @@ hundred lines, and the infrastructure around it is the point.
 
 | Component | Responsibility |
 |---|---|
-| `cmd/simfleet` | Submits experiments, queries status. Short-lived. |
+| `cmd/simfleet` | Submits experiments and reports on them, live with `-watch`. Short-lived; talks only to Postgres. |
 | `cmd/controller` | Two loops: publishes outbox → Kafka (fast tick), and reconciles state (slow tick). Long-lived, no state in memory. |
 | `cmd/worker` | Consumes job ids from Kafka, runs them through the executor. Long-lived, one runner type per process. |
 | `cmd/migrate` | Applies schema migrations. Separate on purpose (see D-11). |
@@ -320,8 +320,38 @@ controller scores and closes the experiment.
 docker compose up -d
 go run ./cmd/migrate
 ./bin/runlocal spawn 5          # controller + 5 workers
-./bin/simfleet submit examples/crossing-smoke.yaml
+./bin/simfleet submit -watch examples/crossing-small.yaml
 ```
+
+### Experiment report
+
+`simfleet report [-watch] [-n 5] [-o report.html] [experiment-id]` (default:
+the most recent experiment). Text for the terminal, or one self-contained HTML
+page (`-o *.html`). `simfleet submit -watch` submits and follows in one go.
+
+Contents: outcome bar over **all** jobs (zones + failed + unfinished + not
+scored, so missing jobs stay visible), job counts, wall time, compute time and
+mean/min/max per job, the outcome breakdown per value of every swept parameter
+(axes ranked by spread of mean score — marginal, blind to interactions), and
+the N worst / N best cases with their parameters, metrics and the gate that
+fired. Ties at the extremes are stated ("771 jobs share score 0").
+
+Completeness is explicit: failed jobs, unfinished jobs, results not yet scored
+with the current spec (NULL or stale `scoring_hash`) and `scoring_error` rows
+each produce a warning, and a report with any of them is headed INCOMPLETE.
+
+`-watch` polls `store.Progress` (a lighter query: no axes, no cases) every
+`-interval`, redrawing in place on a terminal and printing one line per update
+otherwise (logs, `kubectl logs`). Throughput and ETA use a sliding window, so
+workers joining or leaving (KEDA) show up at once. When the experiment
+finishes it keeps waiting while the scoring backlog shrinks, gives up after
+`-score-wait` without progress, and then prints the full report. All reads of
+one report run in a single `REPEATABLE READ` read-only transaction, so the
+numbers describe one moment even while workers write.
+
+Layout: `store/report.go` counts, `internal/report` builds and renders
+(`Build`, `Watch`, `WriteText`, `WriteHTML`, `WriteLive`), `cmd/simfleet` wires
+flags. Submit logic lives in `internal/submit`, shared with `runlocal`.
 
 ### Packages
 
@@ -421,8 +451,8 @@ func Build(name string, env Environment) (Runner, error)   // worker only
   → destination (`Kafka.topicFor`, currently always `KAFKA_TOPIC`). Swapping
   Kafka for RabbitMQ means a new `bus` adapter, nothing else. The DB column is
   `outbox.runner` (renamed from `topic` in migration 004).
-- Only submit (currently `runlocal submit`; `cmd/simfleet` does not exist yet)
-  and `cmd/worker` (execute) import runner packages.
+- Only the submitting binaries (`cmd/simfleet`, `runlocal`; both go through
+  `internal/submit`) and `cmd/worker` (execute) import runner packages.
 - **One topic, one group for now** (`sim.jobs`, `simfleet-workers`). Per-runner
   topics matter only when two workloads run *simultaneously* — not when one is
   swapped for the other.
@@ -474,7 +504,7 @@ up; these are the places where code, docs and tooling disagree.
 
 | This document says | Reality |
 |---|---|
-| `cmd/simfleet` submits experiments (§2, §4) | Does not exist. Submit is `runlocal submit`. The root `main.go` prints "Hello from WSL", and a 2.3 MB Linux binary `simfleet` is committed at the repo root. |
+| `cmd/simfleet` submits experiments (§2, §4) | Exists now (`submit`, `report`). Still: the root `main.go` prints "Hello from WSL", and a 2.3 MB Linux binary `simfleet` is committed at the repo root. |
 | `./bin/runlocal spawn 5` starts controller + 5 workers (§4) | `spawn` takes a spec path, not a count; 5 is hardcoded (`cmd/runlocal/main.go:79`), and it starts **workers only**, no controller. |
 | `make test-integration` with `-tags=integration` (§4) | No such target, and no test file has a `//go:build integration` tag, so `make test` starts testcontainers. `make run-api` points at a nonexistent `cmd/api`. |
 | `TestScoringPipeline` proves scoring, idempotency and rescoring (§4) | Broken. Step 1 calls `PublishOutbox` instead of `Reconcile` (`controller_test.go:47`), so the result map is empty and the zone loop passes vacuously; the "second pass" check then fails because that is the first scoring pass. Step 3 (threshold change → rescore) has no assertion. Fails on clean HEAD too. |
@@ -483,8 +513,6 @@ up; these are the places where code, docs and tooling disagree.
 
 **Bugs**
 
-- `cmd/runlocal/main.go:40`: `slog.Any("error", err)` builds an attribute and
-  discards it — every `runlocal` error is silent and the exit code is 0.
 - `internal/bus/kafka.go`: the error from `ensureTopic` is ignored (`:33`), and
   `if cl == nil` after `kgo.NewClient` (`:26`) should be `if err != nil`.
 - `internal/core/param.go` `UnmarshalJSON`: Go `case`s do not fall through, so
@@ -523,6 +551,16 @@ up; these are the places where code, docs and tooling disagree.
 - **`job_results.scoring_error` is never written.** A result that fails
   `scoring.Evaluate` is retried on every pass, and 50 of them at the head of the
   queue (`ORDER BY created_at LIMIT batch`) would block all scoring.
+
+**Found while building the report on 2026-11-11** (same 3,510-job run, not fixed)
+
+- **Run durations are truncated to whole milliseconds.** `crossing` reports
+  `time.Since(start).Milliseconds()`; its runs take well under 1 ms, so most
+  rows hold 0 and 3,510 runs sum to "11 ms". The report prints `<1ms` and
+  calls the total a lower bound. Fix: store microseconds (or nanoseconds).
+- **The `w1` crash hook stalls a run for ~25 s** (see Cleanup): with a worker
+  named `w1`, the live view sat at 68% until its leases expired and its
+  partitions were reassigned.
 
 ---
 
