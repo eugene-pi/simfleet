@@ -1,0 +1,11 @@
+.git
+.github
+bin/
+out/
+examples/
+*.md
+.env
+.env.*
+.vscode
+docker/
+infra/

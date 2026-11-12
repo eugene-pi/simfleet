@@ -1,4 +1,43 @@
+name: simfleet
 services:
+  migrate:
+    image: simfleet/migrate:dev
+    environment:
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/simfleet?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  controller:
+    image: simfleet/controller:dev
+    environment:
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/simfleet?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_TOPIC: sim.jobs
+      KAFKA_PARTITIONS: "12"
+      METRICS_ADDR: ":9100"
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    image: simfleet/worker:dev
+    environment:
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/simfleet?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_GROUP: simfleet-workers
+      SIMFLEET_RUNNER: crossing
+      METRICS_ADDR: ":9100"
+      LOG_FORMAT: json
+    depends_on:
+      controller:
+        condition: service_started
+
   postgres:
     image: postgres:17
     environment:
@@ -74,4 +113,13 @@ services:
       - ./storage/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/simfleet.yml:ro
       - ./storage/grafana/dashboards:/var/lib/grafana/dashboards/simfleet:ro
     depends_on: [prometheus]
-      
+     
+  loki:
+    image: grafana/loki:latest
+    ports: ["3100:3100"]
+
+  alloy:
+    image: grafana/alloy:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./deploy/compose/alloy.river:/etc/alloy/config.river:ro

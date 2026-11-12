@@ -8,11 +8,19 @@ export
 endif
 
 SPEC ?= examples/crossing-small.yaml
+VERSION ?= dev
+IMAGES  := controller worker migrate
 
-.PHONY: build test lint migrate db-up db-down run-api run-local tidy
+.PHONY: build images test lint migrate db-up db-down run-api run-local tidy
 
 build:
 	go build -o bin/ ./cmd/...
+
+images:
+	@for c in $(IMAGES); do \
+	  docker build -f build/Dockerfile --build-arg CMD=$$c --build-arg VERSION=$(VERSION) \
+	    -t simfleet/$$c:$(VERSION) -t simfleet/$$c:latest . ; \
+	done
 
 test:
 	go test ./... -race -count=1
