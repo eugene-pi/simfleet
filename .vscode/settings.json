@@ -2,5 +2,13 @@
     "makefile.configureOnOpen": false,
     "gopls": {
         "build.buildFlags": ["-tags=integration"]
+    },
+    "files.associations": {
+        "*.mk": "makefile"
+    },
+    "[makefile]": {
+        "editor.renderWhitespace": "all",
+        "editor.insertSpaces": false,
+        "editor.detectIndentation": false
     }
 }

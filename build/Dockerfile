@@ -6,9 +6,6 @@ WORKDIR /src
 
 # Dependencies first: this layer is cached and only rebuilds when go.mod or
 # go.sum change, so an ordinary code edit skips the module download entirely.
-# Сначала зависимости: этот слой кешируется и пересобирается только при
-# изменении go.mod или go.sum, поэтому обычная правка кода полностью
-# пропускает скачивание модулей.
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
@@ -21,10 +18,6 @@ ARG VERSION=dev
 # which is what makes the scratch base below possible.
 # -w -s strip debug info and the symbol table: a few MB smaller, and nothing
 # in production reads them.
-# CGO_ENABLED=0 даёт статически скомпонованный файл без зависимости от libc —
-# именно это позволяет использовать пустой базовый образ ниже.
-# -w -s убирают отладочную информацию и таблицу символов: на несколько
-# мегабайт меньше, а в рабочей среде их всё равно никто не читает.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux \

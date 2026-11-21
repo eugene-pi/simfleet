@@ -8,50 +8,26 @@ export
 endif
 
 SPEC ?= examples/crossing-small.yaml
+DOCKER_NETWORK ?= simfleet_default
 VERSION ?= dev
-IMAGES  := controller worker migrate
+IMAGES  := controller worker migrate simfleet
 # experiment id for "make report"; empty means the most recent one
 EXP ?=
 
-.PHONY: build images test lint migrate db-up db-down run-api run-local tidy submit report
+include make/go.mk
+include make/docker.mk
+include make/k8s.mk
 
-build:
-	go build -o bin/ ./cmd/...
+.DEFAULT_GOAL := help
 
-images:
-	@for c in $(IMAGES); do \
-	  docker build -f build/Dockerfile --build-arg CMD=$$c --build-arg VERSION=$(VERSION) \
-	    -t simfleet/$$c:$(VERSION) -t simfleet/$$c:latest . ; \
-	done
+# Self-documenting help: every target with a ## comment shows up here.
+.PHONY: dev help
 
-test:
-	go test ./... -race -count=1
+.PHONY: dev
+dev: ## Full local deploy
+	compose-up k8s-load k8s-secrets k8s-apply 
 
-lint:
-	golangci-lint run
+help:
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	  | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-tidy:
-	go mod tidy
-
-db-up:
-	docker run -d --name pg -p 5432:5432 \
-	  -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=simfleet postgres:17
-
-db-down:
-	docker rm -f pg
-
-migrate:
-	go run ./cmd/migrate
-
-run-api:
-	go run ./cmd/api
-
-run-local:
-	go run ./cmd/runlocal submit $(SPEC)
-
-# submit and follow live, then print the report
-submit:
-	go run ./cmd/simfleet submit -watch $(SPEC)
-
-report:
-	go run ./cmd/simfleet report $(EXP)
