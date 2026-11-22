@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: simfleet
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simfleet
+      component: worker
+  # RollingUpdate here, unlike the controller: workers should keep processing
+  # while a new version comes up.
+  # Здесь RollingUpdate, в отличие от контроллера: исполнители должны
+  # продолжать работу, пока поднимается новая версия.
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: simfleet
+        component: worker
+    spec:
+      # Long enough for the slowest job plus margin. On KEDA scale-down this
+      # path runs constantly, not just on deploys.
+      # Хватает на самое долгое задание плюс запас. При свёртывании KEDA этот
+      # путь отрабатывает постоянно, а не только при развёртывании.
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: worker
+          image: simfleet/worker:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SIMFLEET_RUNNER
+              value: crossing
+            - name: GOMEMLIMIT
+              value: "112MiB"
+            # The pod name is unique by construction, which is exactly what
+            # the lease holder field needs.
+            - name: WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef: { name: simfleet-config }
+            - secretRef:    { name: simfleet-secrets }
+          ports:
+            - name: metrics
+              containerPort: 9100
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 128Mi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /readyz, port: metrics }
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Needed because readOnlyRootFilesystem is on and the runner may use
+        # WorkDir. Lives as long as the pod.
+        - name: tmp
+          emptyDir: {}

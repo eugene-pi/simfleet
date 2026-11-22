@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller
+  labels:
+    app: simfleet
+    component: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simfleet
+      component: controller
+  strategy:
+    # Recreate instead of the default RollingUpdate: not because two
+    # controllers would break anything — every query uses SKIP LOCKED or a
+    # conditional UPDATE — but because one is enough and overlap buys nothing.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: simfleet
+        component: controller
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: controller
+          image: simfleet/controller:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GOMEMLIMIT
+              value: "112MiB"
+          envFrom:
+            - configMapRef: { name: simfleet-config }
+            - secretRef:    { name: simfleet-secrets }
+          ports:
+            - name: metrics
+              containerPort: 9100
+          resources:
+            requests: { cpu: 50m,  memory: 64Mi }
+            limits:   { cpu: 500m, memory: 128Mi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /readyz, port: metrics }
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

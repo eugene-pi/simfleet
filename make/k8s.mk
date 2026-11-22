@@ -1,4 +1,4 @@
-.PHONY: cluster-up cluster-down k8s-load k8s-secrets k8s-apply
+.PHONY: cluster-up cluster-down k8s-load k8s-migrate k8s-secrets k8s-apply
 
 cluster-up: ## Create the k3d cluster
 	@docker network inspect $(DOCKER_NETWORK) >/dev/null 2>&1 || \
@@ -9,7 +9,11 @@ cluster-up: ## Create the k3d cluster
 k8s-load: images ## Import images into the cluster
 	k3d image import -c simfleet $(addprefix simfleet/,$(addsuffix :$(VERSION),$(IMAGES)))
 
+k8s-migrate: ## Apply migrations one more time
+	kubectl delete job simfleet-migrate
+	kubectl apply -f deploy/k8s/10-migrate.yaml
+
 k8s-secrets: ## Create secrets from the environment
 	kubectl create secret generic simfleet-secrets \
-	  --from-literal=DATABASE_URL="$(DATABASE_URL)" \
+	  --from-literal=DATABASE_URL="$(K8S_DATABASE_URL)" \
 	  --dry-run=client -o yaml | kubectl apply -f -

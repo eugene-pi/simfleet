@@ -27,5 +27,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ---- runtime stage ----
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/app /app
-USER nonroot:nonroot
+# Numeric uid:gid, not the name: kubelet verifies runAsNonRoot by comparing
+# the id to zero and cannot resolve a username from inside the image.
+USER 65532:65532
 ENTRYPOINT ["/app"]

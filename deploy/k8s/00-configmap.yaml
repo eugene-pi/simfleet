@@ -1,0 +1,12 @@
+# declare ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: simfleet-config
+data:
+  KAFKA_BROKERS: "kafka:29092"
+  KAFKA_TOPIC: "sim.jobs"
+  KAFKA_PARTITIONS: "12"
+  KAFKA_GROUP: "simfleet-workers"
+  METRICS_ADDR: ":9100"
+  LOG_FORMAT: "json"
